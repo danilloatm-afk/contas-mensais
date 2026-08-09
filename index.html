@@ -172,9 +172,36 @@
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Contas Mensais</h1>
-  <div class="sub">Lançamento e controle de contas do mês — dados sincronizados na nuvem, acessíveis de qualquer aparelho.</div>
+
+<div id="authScreen" style="display:flex; min-height:100vh; align-items:center; justify-content:center; padding:20px;">
+  <div style="max-width:360px; width:100%; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:28px;">
+    <h1 style="font-size:20px; margin:0 0 4px;">Contas Mensais</h1>
+    <div class="sub" style="margin-bottom:20px;">Entre com seu e-mail e senha</div>
+    <div class="field">
+      <label>E-mail</label>
+      <input type="email" id="authEmail" placeholder="seuemail@exemplo.com">
+    </div>
+    <div class="field">
+      <label>Senha</label>
+      <input type="password" id="authPassword" placeholder="Mínimo 6 caracteres">
+    </div>
+    <div id="authError" style="color:var(--danger); font-size:13px; margin-bottom:10px; display:none;"></div>
+    <button class="primary" id="btnAuthSubmit" style="width:100%; margin-bottom:10px;">Entrar</button>
+    <button class="secondary" id="btnAuthToggle" style="width:100%;">Não tem conta? Criar conta</button>
+  </div>
+</div>
+
+<div class="wrap" id="appWrap" style="display:none;">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1>Contas Mensais</h1>
+      <div class="sub">Lançamento e controle de contas do mês — dados sincronizados na nuvem, acessíveis de qualquer aparelho.</div>
+    </div>
+    <div style="text-align:right; font-size:12px; color:var(--muted); white-space:nowrap;">
+      <div id="userEmailLabel"></div>
+      <button class="secondary" id="btnLogout" style="margin-top:6px; padding:5px 12px; font-size:12px;">Sair</button>
+    </div>
+  </div>
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="contas">Contas</button>
@@ -419,6 +446,42 @@ const SUPABASE_URL = 'https://jvfyqvefznkpcvjaerta.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp2ZnlxdmVmem5rcGN2amFlcnRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyMTQ4NjgsImV4cCI6MjEwMTc5MDg2OH0.2Ef6LpZ61WM8myHBYeQGo3TuGqk5C3x36ER_sWRNPS4';
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+let currentUserId = null;
+let authMode = 'login';
+
+function showApp(email){
+  document.getElementById('authScreen').style.display = 'none';
+  document.getElementById('appWrap').style.display = '';
+  document.getElementById('userEmailLabel').textContent = email || '';
+}
+function showAuthScreen(){
+  document.getElementById('authScreen').style.display = 'flex';
+  document.getElementById('appWrap').style.display = 'none';
+}
+
+async function initAuth(){
+  const {data:{session}} = await db.auth.getSession();
+  if(session){
+    currentUserId = session.user.id;
+    showApp(session.user.email);
+    await carregarDados();
+  } else {
+    showAuthScreen();
+  }
+}
+
+db.auth.onAuthStateChange((event, session)=>{
+  if(event === 'SIGNED_IN' && session && session.user.id !== currentUserId){
+    currentUserId = session.user.id;
+    showApp(session.user.email);
+    carregarDados();
+  }
+  if(event === 'SIGNED_OUT'){
+    currentUserId = null;
+    showAuthScreen();
+  }
+});
+
 const DEFAULT_CATEGORIAS = [
   {nome:'Moradia', cor:'#3b82f6'},
   {nome:'Alimentação', cor:'#f59e0b'},
@@ -453,7 +516,8 @@ function contaToRow(c){
   return {
     id:c.id, descricao:c.descricao, categoria:c.categoria, valor:c.valor,
     dia:c.dia, recorrente:c.recorrente, inicio:c.inicio, unico_mes:c.unicoMes,
-    pagamentos:c.pagamentos || {}, fatura_path: c.faturaPath || null
+    pagamentos:c.pagamentos || {}, fatura_path: c.faturaPath || null,
+    user_id: currentUserId
   };
 }
 function rowToGasto(r){
@@ -461,6 +525,12 @@ function rowToGasto(r){
     id:r.id, data:r.data, descricao:r.descricao, categoria:r.categoria, valor:Number(r.valor),
     comprovantePath: r.comprovante_path || null,
     comprovanteUrl: faturaUrlFromPath(r.comprovante_path)
+  };
+}
+function gastoToRow(g){
+  return {
+    id:g.id, data:g.data, descricao:g.descricao, categoria:g.categoria, valor:g.valor,
+    comprovante_path: g.comprovantePath || null, user_id: currentUserId
   };
 }
 function avisarErro(msg, error){
@@ -488,7 +558,8 @@ async function carregarDados(){
     categorias = catsRes.data.map(c => ({nome:c.nome, cor:c.cor}));
   } else {
     categorias = DEFAULT_CATEGORIAS.slice();
-    const {error} = await db.from('categorias').insert(categorias);
+    const seeds = categorias.map(c => ({...c, user_id: currentUserId}));
+    const {error} = await db.from('categorias').insert(seeds);
     if(error) avisarErro('Não foi possível criar as categorias padrão.', error);
   }
 
@@ -781,7 +852,7 @@ inputSaldoEl.addEventListener('blur', async (e)=>{
   const monthStr = ym(viewDate);
   const val = saldoPorMes[monthStr] || 0;
   e.target.value = val ? formatCurrencyInput(val) : '';
-  const {error} = await db.from('config').upsert({chave:'saldo_por_mes', valor: saldoPorMes});
+  const {error} = await db.from('config').upsert({chave:'saldo_por_mes', valor: saldoPorMes, user_id: currentUserId});
   if(error) avisarErro('Não foi possível salvar o saldo.', error);
 });
 
@@ -982,7 +1053,7 @@ document.getElementById('btnGastoSave').onclick = async ()=>{
   }
   closeGastoModal(); renderGastos();
   updateSaldoCard(ym(viewDate), totalContasPagas(ym(viewDate)));
-  const {error} = await db.from('gastos').upsert(gastoObj);
+  const {error} = await db.from('gastos').upsert(gastoToRow(gastoObj));
   if(error) avisarErro('Não foi possível salvar o gasto no servidor.', error);
 };
 
@@ -1215,7 +1286,7 @@ document.getElementById('btnCatSave').onclick = async ()=>{
   } else {
     categorias.push({nome, cor});
     closeCatModal(); renderCategorias();
-    const {error} = await db.from('categorias').insert({nome, cor});
+    const {error} = await db.from('categorias').insert({nome, cor, user_id: currentUserId});
     if(error) avisarErro('Não foi possível criar a categoria no servidor.', error);
   }
 };
@@ -1313,12 +1384,57 @@ function exportarPlanilha(){
 const inputEmailEl = document.getElementById('inputEmail');
 inputEmailEl.addEventListener('change', async (e)=>{
   const email = e.target.value.trim();
-  const {error} = await db.from('config').upsert({chave:'email', valor: email});
+  const {error} = await db.from('config').upsert({chave:'email', valor: email, user_id: currentUserId});
   if(error) avisarErro('Não foi possível salvar o e-mail.', error);
 });
 document.getElementById('btnExportar').addEventListener('click', exportarPlanilha);
 
-carregarDados();
+// Autenticação
+function setAuthMode(mode){
+  authMode = mode;
+  document.getElementById('btnAuthSubmit').textContent = mode === 'login' ? 'Entrar' : 'Criar conta';
+  document.getElementById('btnAuthToggle').textContent = mode === 'login' ? 'Não tem conta? Criar conta' : 'Já tem conta? Entrar';
+  document.getElementById('authError').style.display = 'none';
+}
+document.getElementById('btnAuthToggle').onclick = ()=> setAuthMode(authMode === 'login' ? 'signup' : 'login');
+
+document.getElementById('btnAuthSubmit').onclick = async ()=>{
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errEl = document.getElementById('authError');
+  errEl.style.display = 'none';
+  errEl.style.color = 'var(--danger)';
+
+  if(!email || !password){
+    errEl.textContent = 'Preencha e-mail e senha.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const btn = document.getElementById('btnAuthSubmit');
+  btn.disabled = true;
+  const result = authMode === 'login'
+    ? await db.auth.signInWithPassword({email, password})
+    : await db.auth.signUp({email, password});
+  btn.disabled = false;
+
+  if(result.error){
+    errEl.textContent = result.error.message;
+    errEl.style.display = 'block';
+    return;
+  }
+  if(authMode === 'signup' && !result.data.session){
+    errEl.textContent = 'Conta criada! Verifique seu e-mail para confirmar antes de entrar.';
+    errEl.style.color = 'var(--accent)';
+    errEl.style.display = 'block';
+  }
+};
+
+document.getElementById('btnLogout').onclick = async ()=>{
+  await db.auth.signOut();
+};
+
+initAuth();
 </script>
 </body>
 </html>
