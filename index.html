@@ -343,6 +343,7 @@
     <div class="chart-box" style="margin-bottom:24px;">
       <h3 id="projecaoSaldoTitulo">Projeção de saldo disponível</h3>
       <div class="renda-projecao-label">Informe a renda esperada de cada mês. O gráfico mostra, mês a mês, quanto sobraria daquela renda depois das contas recorrentes, parcelas do próprio mês e da meta de gastos diários (não acumula sobra de um mês pro outro).</div>
+      <div class="renda-projecao-label" id="metaGastosAplicadaLabel" style="margin-top:-4px;"></div>
       <div class="renda-projecao-bulk">
         <input type="text" inputmode="decimal" id="rendaBulkInput" placeholder="R$ 0,00">
         <button class="secondary" id="btnRendaBulkAplicar">Aplicar a todos os meses</button>
@@ -1343,6 +1344,11 @@ function renderProjecaoSaldo(){
   renderRendaProjecaoInputs(meses);
 
   document.getElementById('projecaoSaldoTitulo').textContent = 'Projeção de saldo disponível por mês';
+
+  const metaLabel = document.getElementById('metaGastosAplicadaLabel');
+  metaLabel.textContent = metaGastos > 0
+    ? `Meta de gastos diários aplicada nesse desconto: ${fmtMoney(metaGastos)}/mês (edite na aba Gastos diários).`
+    : 'Nenhuma meta de gastos diários definida ainda — nada está sendo descontado por gasto diário nesta projeção.';
 
   // Cada mês é calculado isoladamente, com a mesma fórmula em todos os meses:
   // renda daquele mês − contas recorrentes − parcelas ativas naquele mês.
