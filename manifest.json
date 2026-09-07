@@ -1,0 +1,15 @@
+{
+  "name": "Contas Mensais",
+  "short_name": "Contas Mensais",
+  "description": "Lançamento e controle de contas do mês, gastos diários, parcelas e investimentos",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
