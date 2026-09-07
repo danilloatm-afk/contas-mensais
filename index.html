@@ -18,7 +18,8 @@
   h1{font-size:22px; margin:0 0 4px;}
   .sub{color:var(--muted); font-size:13px; margin-bottom:20px;}
 
-  .tabs{display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid var(--border);}
+  .tabs{display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid var(--border); overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .tab-btn{flex-shrink:0;}
   .tab-btn{
     background:transparent; border:none; color:var(--muted); padding:10px 4px;
     margin-right:16px; font-size:14px; cursor:pointer; border-bottom:2px solid transparent;
@@ -62,6 +63,8 @@
   }
 
   .cards{display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:24px;}
+  .cards-3{grid-template-columns:repeat(3,1fr);}
+  .cards-4{grid-template-columns:repeat(4,1fr);}
   .card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px;}
   .card .label{font-size:12px; color:var(--muted); margin-bottom:6px;}
   .card .value{font-size:20px; font-weight:700;}
@@ -73,7 +76,7 @@
   .card.saldo .value.negativo{color:var(--danger);}
 
   .charts{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px;}
-  .chart-box{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px;}
+  .chart-box{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; overflow-x:auto;}
   .chart-box h3{margin:0 0 12px; font-size:14px; color:var(--muted); font-weight:600;}
   .legend{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; font-size:12px;}
   .legend span{display:flex; align-items:center; gap:6px; color:var(--muted);}
@@ -297,7 +300,7 @@
       </div>
     </div>
 
-    <div class="cards" style="grid-template-columns:repeat(4,1fr);">
+    <div class="cards cards-4">
       <div class="card total"><div class="label">Total gasto no mês</div><div class="value" id="cardGastoTotal">R$ 0,00</div></div>
       <div class="card"><div class="label">Meta do mês</div><div class="value" id="cardMetaGastos">R$ 0,00</div></div>
       <div class="card"><div class="label">Dentro da meta</div><div class="value" id="cardMetaRestante">R$ 0,00</div></div>
@@ -324,7 +327,7 @@
   </div>
 
   <div id="tabParcelas" style="display:none;">
-    <div class="cards" style="grid-template-columns:repeat(5,1fr);">
+    <div class="cards">
       <div class="card"><div class="label">Parcelas de cartão (com fim)</div><div class="value" id="cardParcelasComFim">R$ 0,00</div></div>
       <div class="card"><div class="label">Despesas fixas</div><div class="value" id="cardDespesasFixas">R$ 0,00</div></div>
       <div class="card total"><div class="label">Total comprometido este mês</div><div class="value" id="cardParcelasMes">R$ 0,00</div></div>
@@ -381,7 +384,7 @@
   </div>
 
   <div id="tabInvestimentos" style="display:none;">
-    <div class="cards" style="grid-template-columns:repeat(3,1fr);">
+    <div class="cards cards-3">
       <div class="card">
         <div class="label">Taxa Selic atual</div>
         <div class="value" id="cardSelicAtual">—</div>
