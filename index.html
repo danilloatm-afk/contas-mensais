@@ -289,9 +289,24 @@
       <button id="nextMonthG">›</button>
     </div>
 
-    <div class="cards" style="grid-template-columns:repeat(2,1fr);">
+    <div class="saldo-box">
+      <label for="inputMetaGastos">Meta de gastos mensal</label>
+      <div class="saldo-input-wrap">
+        <span class="currency-prefix">R$</span>
+        <input type="text" inputmode="decimal" id="inputMetaGastos" placeholder="0,00">
+      </div>
+    </div>
+
+    <div class="cards" style="grid-template-columns:repeat(4,1fr);">
       <div class="card total"><div class="label">Total gasto no mês</div><div class="value" id="cardGastoTotal">R$ 0,00</div></div>
+      <div class="card"><div class="label">Meta do mês</div><div class="value" id="cardMetaGastos">R$ 0,00</div></div>
+      <div class="card"><div class="label">Dentro da meta</div><div class="value" id="cardMetaRestante">R$ 0,00</div></div>
       <div class="card"><div class="label">Qtd. de lançamentos</div><div class="value" id="cardGastoQtd">0</div></div>
+    </div>
+
+    <div class="chart-box" style="margin-bottom:24px;">
+      <h3>Meta x gasto realizado (últimos 6 meses)</h3>
+      <div id="metaGastoChart"></div>
     </div>
 
     <div class="toolbar">
@@ -663,6 +678,7 @@ const EDGE_FUNCTION_URL = 'https://jvfyqvefznkpcvjaerta.supabase.co/functions/v1
 let selicAnual = null;
 let investimentoSaldo = 0;
 let investimentoPercentual = 70;
+let metaGastos = 0;
 
 function faturaUrlFromPath(path){
   if(!path) return null;
@@ -781,6 +797,8 @@ async function carregarDados(){
   const invRow = configRows.find(r => r.chave === 'investimento');
   investimentoSaldo = invRow && invRow.valor ? (invRow.valor.saldo || 0) : 0;
   investimentoPercentual = invRow && invRow.valor && invRow.valor.percentual != null ? invRow.valor.percentual : 70;
+  const metaRow = configRows.find(r => r.chave === 'meta_gastos');
+  metaGastos = metaRow && metaRow.valor ? (metaRow.valor.valor || 0) : 0;
 
   render();
   renderGastos();
@@ -1459,6 +1477,20 @@ inputSaldoEl.addEventListener('blur', async (e)=>{
   if(error) avisarErro('Não foi possível salvar o saldo.', error);
 });
 
+const inputMetaGastosEl = document.getElementById('inputMetaGastos');
+inputMetaGastosEl.addEventListener('input', (e)=>{
+  metaGastos = parseCurrency(e.target.value);
+  renderGastos();
+});
+inputMetaGastosEl.addEventListener('focus', (e)=>{
+  e.target.value = metaGastos ? String(metaGastos).replace('.',',') : '';
+});
+inputMetaGastosEl.addEventListener('blur', async (e)=>{
+  e.target.value = metaGastos ? formatCurrencyInput(metaGastos) : '';
+  const {error} = await db.from('config').upsert({chave:'meta_gastos', valor: {valor: metaGastos}, user_id: currentUserId});
+  if(error) avisarErro('Não foi possível salvar a meta de gastos.', error);
+});
+
 function renderGastos(){
   const monthStr = ym(viewDate);
   document.getElementById('monthLabelG').textContent = monthLabel(viewDate);
@@ -1468,32 +1500,94 @@ function renderGastos(){
   document.getElementById('cardGastoTotal').textContent = fmtMoney(total);
   document.getElementById('cardGastoQtd').textContent = lista.length;
 
+  const inputMeta = document.getElementById('inputMetaGastos');
+  if(document.activeElement !== inputMeta){
+    inputMeta.value = metaGastos ? formatCurrencyInput(metaGastos) : '';
+  }
+  const cardMeta = document.getElementById('cardMetaGastos');
+  const cardRestante = document.getElementById('cardMetaRestante');
+  cardMeta.textContent = fmtMoney(metaGastos);
+  if(metaGastos > 0){
+    const restante = metaGastos - total;
+    cardRestante.textContent = fmtMoney(restante);
+    cardRestante.style.color = restante < 0 ? 'var(--danger)' : 'var(--accent)';
+  } else {
+    cardRestante.textContent = '—';
+    cardRestante.style.color = '';
+  }
+
   const tbody = document.getElementById('gastoTableBody');
   const empty = document.getElementById('emptyGastoState');
   tbody.innerHTML = '';
   if(lista.length===0){
     empty.style.display='block';
-    return;
+  } else {
+    empty.style.display='none';
+    lista.forEach(g=>{
+      const [,m,d] = g.data.split('-');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${d}/${m}</td>
+        <td>${escapeHtml(g.descricao)}</td>
+        <td><span class="cat-badge"><span class="swatch" style="width:8px;height:8px;background:${getCatColor(g.categoria)}"></span> ${escapeHtml(g.categoria)}</span></td>
+        <td>${fmtMoney(g.valor)}</td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-btn ${g.comprovantePath?'has-fatura':''}" data-comprovante="${g.id}" title="${g.comprovantePath?'Ver/gerenciar foto':'Anexar foto do cupom'}">📷</button>
+            <button class="icon-btn" data-gasto-edit="${g.id}" title="Editar">✎</button>
+            <button class="icon-btn" data-gasto-del="${g.id}" title="Excluir">🗑</button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
   }
-  empty.style.display='none';
 
-  lista.forEach(g=>{
-    const [,m,d] = g.data.split('-');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${d}/${m}</td>
-      <td>${escapeHtml(g.descricao)}</td>
-      <td><span class="cat-badge"><span class="swatch" style="width:8px;height:8px;background:${getCatColor(g.categoria)}"></span> ${escapeHtml(g.categoria)}</span></td>
-      <td>${fmtMoney(g.valor)}</td>
-      <td>
-        <div class="row-actions">
-          <button class="icon-btn ${g.comprovantePath?'has-fatura':''}" data-comprovante="${g.id}" title="${g.comprovantePath?'Ver/gerenciar foto':'Anexar foto do cupom'}">📷</button>
-          <button class="icon-btn" data-gasto-edit="${g.id}" title="Editar">✎</button>
-          <button class="icon-btn" data-gasto-del="${g.id}" title="Excluir">🗑</button>
-        </div>
-      </td>
-    `;
-    tbody.appendChild(tr);
+  renderMetaGastoChart();
+}
+
+function renderMetaGastoChart(){
+  const box = document.getElementById('metaGastoChart');
+  const meses = [];
+  for(let i=5;i>=0;i--){
+    meses.push(new Date(viewDate.getFullYear(), viewDate.getMonth()-i, 1));
+  }
+  const valores = meses.map(d => gastosDoMes(ym(d)).reduce((s,g)=>s+g.valor,0));
+  const maxVal = Math.max(...valores, metaGastos, 1);
+  const barW = 30, gap = 12, height = 190, chartTop = 15, chartBottom = 140;
+  const usableH = chartBottom - chartTop;
+
+  let bars = '';
+  meses.forEach((d,i)=>{
+    const val = valores[i];
+    const barH = (val/maxVal) * usableH;
+    const x = i*(barW+gap) + 10;
+    const y = chartBottom - barH;
+    const isCurrent = ym(d) === ym(viewDate);
+    const overBudget = metaGastos > 0 && val > metaGastos;
+    const color = overBudget ? '#ef4444' : '#22c55e';
+    bars += `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(barH,1)}" rx="4" fill="${color}" opacity="${isCurrent?1:0.7}" class="meta-bar" data-mes="${monthLabel(d)}" data-valor="${val}"></rect>`;
+    bars += `<text x="${x+barW/2}" y="155" font-size="9" fill="#94a3b8" text-anchor="middle">${d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</text>`;
+  });
+
+  const chartW = meses.length*(barW+gap)+10;
+  let linhaMeta = '';
+  if(metaGastos > 0){
+    const yMeta = chartBottom - (metaGastos/maxVal) * usableH;
+    linhaMeta = `<line x1="2" y1="${yMeta}" x2="${chartW-2}" y2="${yMeta}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,3"></line>
+      <text x="${chartW-4}" y="${yMeta-4}" font-size="9" fill="#f59e0b" text-anchor="end">Meta</text>`;
+  }
+
+  box.innerHTML = `<svg width="${chartW}" height="${height}" viewBox="0 0 ${chartW} ${height}">${bars}${linhaMeta}</svg>`;
+  box.querySelectorAll('.meta-bar').forEach(el=>{
+    el.addEventListener('mousemove', (e)=>{
+      const mes = el.getAttribute('data-mes');
+      const valor = parseFloat(el.getAttribute('data-valor'));
+      const diff = metaGastos > 0 ? (valor - metaGastos) : null;
+      const diffLabel = diff == null ? '' : (diff > 0 ? `<br>${fmtMoney(diff)} acima da meta` : `<br>${fmtMoney(-diff)} abaixo da meta`);
+      showTooltip(e, `<strong>${escapeHtml(mes)}</strong><br>Gasto: ${fmtMoney(valor)}${diffLabel}`);
+    });
+    el.addEventListener('mouseleave', hideTooltip);
   });
 }
 
