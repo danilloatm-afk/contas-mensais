@@ -1268,6 +1268,25 @@ function renderProjecaoParcelas(){
   });
 }
 
+function normalizarDescricao(s){
+  return (s||'').toLowerCase().normalize('NFD').replace(new RegExp('[̀-ͯ]', 'g'), '').trim();
+}
+
+// Despesa fixa (parcelas) e conta recorrente (contas) são dois cadastros diferentes
+// pro mesmo tipo de gasto — avisa se a mesma descrição já existe no outro lugar,
+// pra evitar contar o mesmo valor em dobro na projeção de saldo.
+function avisarPossivelDuplicataRecorrente(descricao, origem){
+  const norm = normalizarDescricao(descricao);
+  if(!norm) return;
+  if(origem === 'despesaFixa'){
+    const match = contas.find(c => c.recorrente && normalizarDescricao(c.descricao) === norm);
+    if(match) alert(`Atenção: já existe uma conta recorrente chamada "${match.descricao}" cadastrada na aba Contas. Ter os dois cadastros pode contar o mesmo gasto em dobro na projeção de saldo e no aporte sugerido de investimento.`);
+  } else {
+    const match = parcelas.find(p => p.parcelasTotais == null && normalizarDescricao(p.descricao) === norm);
+    if(match) alert(`Atenção: já existe uma despesa fixa chamada "${match.descricao}" cadastrada na aba Parcelas. Ter os dois cadastros pode contar o mesmo gasto em dobro na projeção de saldo e no aporte sugerido de investimento.`);
+  }
+}
+
 function totalContasRecorrentes(monthStr){
   return contas.filter(c => c.recorrente && c.inicio <= monthStr).reduce((s,c)=>s+c.valor, 0);
 }
@@ -1754,8 +1773,10 @@ document.getElementById('btnSave').onclick = async ()=>{
   }
 
   let contaObj;
+  let eraRecorrente = false;
   if(id){
     contaObj = contas.find(x=>x.id===id);
+    eraRecorrente = contaObj.recorrente;
     contaObj.descricao = descricao; contaObj.categoria = categoria; contaObj.valor = valor;
     contaObj.dia = dia; contaObj.recorrente = recorrente;
   } else {
@@ -1765,6 +1786,7 @@ document.getElementById('btnSave').onclick = async ()=>{
     };
     contas.push(contaObj);
   }
+  if(recorrente && !eraRecorrente) avisarPossivelDuplicataRecorrente(descricao, 'contaRecorrente');
   closeModal(); render();
   const {error} = await db.from('contas').upsert(contaToRow(contaObj));
   if(error) avisarErro('Não foi possível salvar a conta no servidor.', error);
@@ -2261,6 +2283,8 @@ document.getElementById('btnDfSalvar').onclick = async ()=>{
     return;
   }
 
+  avisarPossivelDuplicataRecorrente(descricao, 'despesaFixa');
+
   const novaDespesa = {
     id: uid(), user_id: currentUserId, cartao, descricao,
     valor_parcela: valor, parcelas_totais: null,
@@ -2434,6 +2458,7 @@ document.getElementById('parcelaTableBody').addEventListener('change', async (e)
   if(!p) return;
 
   if(e.target.checked){
+    avisarPossivelDuplicataRecorrente(p.descricao, 'despesaFixa');
     p.parcelasTotais = null;
     renderParcelas();
     const {error} = await db.from('parcelas').update({parcelas_totais: null}).eq('id', id);
