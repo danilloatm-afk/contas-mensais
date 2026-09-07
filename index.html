@@ -225,11 +225,48 @@
   </div>
 
   <div class="tabs">
+    <button class="tab-btn" data-tab="visaogeral">Visão geral</button>
     <button class="tab-btn active" data-tab="contas">Contas</button>
     <button class="tab-btn" data-tab="gastos">Gastos diários</button>
     <button class="tab-btn" data-tab="parcelas">Parcelas</button>
     <button class="tab-btn" data-tab="investimentos">Investimentos</button>
     <button class="tab-btn" data-tab="config">Configurações</button>
+  </div>
+
+  <div id="tabVisaoGeral" style="display:none;">
+    <h2 id="visaoGeralTitulo" style="margin-bottom:16px;">Visão geral</h2>
+    <div class="cards" id="visaoGeralCards">
+      <div class="card">
+        <div class="label">Renda do mês</div>
+        <div class="value" id="vgRenda">R$ 0,00</div>
+      </div>
+      <div class="card">
+        <div class="label">Contas fixas + parcelas</div>
+        <div class="value" id="vgDespesas">R$ 0,00</div>
+      </div>
+      <div class="card">
+        <div class="label">Gasto diário considerado</div>
+        <div class="value" id="vgGastoDiario">R$ 0,00</div>
+      </div>
+      <div class="card">
+        <div class="label">Sobra disponível</div>
+        <div class="value" id="vgSobra">R$ 0,00</div>
+      </div>
+      <div class="card">
+        <div class="label">Aporte sugerido</div>
+        <div class="value" id="vgAporte">R$ 0,00</div>
+      </div>
+    </div>
+
+    <div class="chart-box" style="margin-bottom:24px;">
+      <h3>Como chegamos nesse número</h3>
+      <div class="sub" id="vgBreakdown" style="margin-top:8px; line-height:1.8;"></div>
+    </div>
+
+    <div class="chart-box">
+      <h3>Investimentos</h3>
+      <div class="sub" id="vgInvestimentos" style="margin-top:8px; line-height:1.8;"></div>
+    </div>
   </div>
 
   <div id="tabContas">
@@ -1369,6 +1406,47 @@ function calcularSaldoDisponivelMes(m){
   return renda - totalContasRecorrentes(m) - parcelasMes - gastoConsiderado;
 }
 
+function renderVisaoGeral(){
+  const mesAtual = mesesProjecao()[0];
+  const [y,mo] = mesAtual.split('-').map(Number);
+  const d = new Date(y, mo-1, 1);
+  document.getElementById('visaoGeralTitulo').textContent = 'Visão geral — ' + d.toLocaleDateString('pt-BR',{month:'long', year:'numeric'});
+
+  const renda = saldoPorMes[mesAtual] || 0;
+  const contasFixas = totalContasRecorrentes(mesAtual);
+  const parcelasMes = parcelas.filter(p=>parcelaCobreMes(p,mesAtual)).reduce((s,p)=>s+p.valorParcela,0);
+  const despesasFixasEParcelas = contasFixas + parcelasMes;
+  const gastosMes = gastosDoMes(mesAtual).reduce((s,g)=>s+g.valor,0);
+  const gastoConsiderado = Math.max(metaGastos, gastosMes);
+  const sobra = renda - despesasFixasEParcelas - gastoConsiderado;
+  const aporte = Math.max(0, sobra * (investimentoPercentual/100));
+
+  document.getElementById('vgRenda').textContent = fmtMoney(renda);
+  document.getElementById('vgDespesas').textContent = fmtMoney(despesasFixasEParcelas);
+  document.getElementById('vgGastoDiario').textContent = fmtMoney(gastoConsiderado);
+  const vgSobra = document.getElementById('vgSobra');
+  vgSobra.textContent = fmtMoney(sobra);
+  vgSobra.style.color = sobra < 0 ? 'var(--danger)' : 'var(--accent)';
+  document.getElementById('vgAporte').textContent = fmtMoney(aporte);
+
+  const fonteGasto = gastosMes > metaGastos ? 'gasto real do mês (já passou da meta)' : (metaGastos > 0 ? 'meta de gastos diários' : 'nenhum gasto ou meta cadastrado');
+  document.getElementById('vgBreakdown').innerHTML = `
+    Renda do mês: <strong>${fmtMoney(renda)}</strong><br>
+    − Contas fixas (recorrentes): <strong>${fmtMoney(contasFixas)}</strong><br>
+    − Parcelas ativas neste mês: <strong>${fmtMoney(parcelasMes)}</strong><br>
+    − Gasto diário considerado (${escapeHtml(fonteGasto)}): <strong>${fmtMoney(gastoConsiderado)}</strong><br>
+    = Sobra disponível: <strong>${fmtMoney(sobra)}</strong><br><br>
+    Aporte sugerido para investir (${investimentoPercentual}% da sobra): <strong>${fmtMoney(aporte)}</strong>
+  `;
+
+  const jaConfirmado = aporteConfirmadoMes === mesAtual;
+  document.getElementById('vgInvestimentos').innerHTML = `
+    Saldo investido hoje: <strong>${fmtMoney(investimentoSaldo)}</strong><br>
+    Taxa Selic atual: <strong>${selicAnual != null ? selicAnual.toLocaleString('pt-BR',{minimumFractionDigits:2}) + '% a.a.' : '—'}</strong><br>
+    Aporte deste mês: <strong>${jaConfirmado ? fmtMoney(aporteConfirmadoValor) + ' (já confirmado ✓)' : 'ainda não confirmado — veja a aba Investimentos'}</strong>
+  `;
+}
+
 function renderProjecaoSaldo(){
   const box = document.getElementById('projecaoSaldoChart');
   const meses = mesesProjecao();
@@ -1459,6 +1537,14 @@ function renderInvestimentos(){
   const meses = mesesProjecao();
   const taxaMensal = selicAnual != null ? Math.pow(1 + selicAnual/100, 1/12) - 1 : 0;
 
+  // O mês atual (i=0) já rendeu uma parte e ainda vai render o resto — não é nem
+  // "zero" nem "um mês inteiro". Proporcionaliza a taxa mensal pelos dias que faltam.
+  const hoje = new Date();
+  const diasNoMesAtual = new Date(hoje.getFullYear(), hoje.getMonth()+1, 0).getDate();
+  const diasRestantesMesAtual = Math.max(0, diasNoMesAtual - hoje.getDate());
+  const taxaDiaria = Math.pow(1 + taxaMensal, 1/diasNoMesAtual) - 1;
+  const taxaRestanteMesAtual = Math.pow(1 + taxaDiaria, diasRestantesMesAtual) - 1;
+
   // Saldo já investido (capital antigo, já com mais de 720 dias) sempre na alíquota mínima de IR (15%).
   // Cada aporte novo é um "cohort" separado, que envelhece com sua própria contagem de dias
   // a partir do mês em que entra na conta — não compartilha idade com os outros aportes.
@@ -1468,23 +1554,22 @@ function renderInvestimentos(){
     const sobra = calcularSaldoDisponivelMes(m);
     const aporte = Math.max(0, sobra * (investimentoPercentual/100));
 
-    // O mês atual (i=0) representa "hoje": ainda não se passou um mês inteiro,
-    // então não aplica rendimento nesse primeiro passo — só a partir do mês seguinte.
-    let rendimentoBase = 0;
+    // No mês atual usa só a taxa dos dias restantes (o resto do mês já rendeu antes de hoje,
+    // e isso já deveria estar refletido no "saldo investido hoje"); nos meses seguintes, mês cheio.
+    const taxaDoMes = i === 0 ? taxaRestanteMesAtual : taxaMensal;
+
+    const rendimentoBase = acumuladoBase * taxaDoMes;
+    acumuladoBase += rendimentoBase;
+
     let rendimentoNovo = 0;
     let rendimentoNovoLiquido = 0;
-    if(i > 0){
-      rendimentoBase = acumuladoBase * taxaMensal;
-      acumuladoBase += rendimentoBase;
-
-      cohorts.forEach(c=>{
-        c.idadeMeses += 1;
-        const rend = c.valor * taxaMensal;
-        c.valor += rend;
-        rendimentoNovo += rend;
-        rendimentoNovoLiquido += rend * (1 - taxaIR(c.idadeMeses * 30));
-      });
-    }
+    cohorts.forEach(c=>{
+      c.idadeMeses += 1;
+      const rend = c.valor * taxaDoMes;
+      c.valor += rend;
+      rendimentoNovo += rend;
+      rendimentoNovoLiquido += rend * (1 - taxaIR(c.idadeMeses * 30));
+    });
 
     // O aporte deste mês entra agora; começa a render a partir do mês seguinte.
     if(aporte > 0) cohorts.push({principal: aporte, valor: aporte, idadeMeses: 0});
@@ -1847,11 +1932,13 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     const tab = btn.getAttribute('data-tab');
+    document.getElementById('tabVisaoGeral').style.display = tab==='visaogeral' ? '' : 'none';
     document.getElementById('tabContas').style.display = tab==='contas' ? '' : 'none';
     document.getElementById('tabGastos').style.display = tab==='gastos' ? '' : 'none';
     document.getElementById('tabParcelas').style.display = tab==='parcelas' ? '' : 'none';
     document.getElementById('tabInvestimentos').style.display = tab==='investimentos' ? '' : 'none';
     document.getElementById('tabConfig').style.display = tab==='config' ? '' : 'none';
+    if(tab==='visaogeral') renderVisaoGeral();
     if(tab==='config') renderCategorias();
     if(tab==='gastos') renderGastos();
     if(tab==='parcelas') renderParcelas();
