@@ -422,6 +422,10 @@
         <label>% da sobra mensal a investir</label>
         <input type="number" id="invPercentualInput" min="0" max="100" step="1" placeholder="70">
       </div>
+      <div class="field" style="max-width:260px; display:inline-block; vertical-align:top; margin-left:16px;">
+        <label>Aporte sugerido deste mês</label>
+        <button class="primary" id="btnConfirmarAporte" style="display:block; width:100%;">Confirmar aporte de R$ 0,00</button>
+      </div>
     </div>
 
     <div class="chart-box" style="margin-bottom:24px;">
@@ -699,6 +703,8 @@ const EDGE_FUNCTION_URL = 'https://jvfyqvefznkpcvjaerta.supabase.co/functions/v1
 let selicAnual = null;
 let investimentoSaldo = 0;
 let investimentoPercentual = 70;
+let aporteMesAtualSugerido = 0;
+let aporteConfirmadoMes = null; // YYYY-MM do último mês em que o usuário confirmou o aporte
 let metaGastos = 0;
 let faturasHistorico = [];
 
@@ -828,6 +834,7 @@ async function carregarDados(){
   const invRow = configRows.find(r => r.chave === 'investimento');
   investimentoSaldo = invRow && invRow.valor ? (invRow.valor.saldo || 0) : 0;
   investimentoPercentual = invRow && invRow.valor && invRow.valor.percentual != null ? invRow.valor.percentual : 70;
+  aporteConfirmadoMes = invRow && invRow.valor ? (invRow.valor.aporteConfirmadoMes || null) : null;
   const metaRow = configRows.find(r => r.chave === 'meta_gastos');
   metaGastos = metaRow && metaRow.valor ? (metaRow.valor.valor || 0) : 0;
 
@@ -1490,6 +1497,16 @@ function renderInvestimentos(){
 
   document.getElementById('cardInvestido12m').textContent = fmtMoney(linhas[linhas.length-1].saldo);
 
+  aporteMesAtualSugerido = linhas[0].aporte;
+  const btnConfirmarAporte = document.getElementById('btnConfirmarAporte');
+  if(aporteConfirmadoMes === mesesProjecao()[0]){
+    btnConfirmarAporte.textContent = 'Aporte confirmado este mês ✓';
+    btnConfirmarAporte.disabled = true;
+  } else {
+    btnConfirmarAporte.textContent = `Confirmar aporte de ${fmtMoney(aporteMesAtualSugerido)}`;
+    btnConfirmarAporte.disabled = aporteMesAtualSugerido <= 0;
+  }
+
   // Gráfico
   const box = document.getElementById('investimentoChart');
   const maxVal = Math.max(...linhas.map(l=>l.saldo), 1);
@@ -1535,7 +1552,7 @@ function renderInvestimentos(){
 async function salvarInvestimentoConfig(){
   const {error} = await db.from('config').upsert({
     chave:'investimento', user_id: currentUserId,
-    valor: { saldo: investimentoSaldo, percentual: investimentoPercentual }
+    valor: { saldo: investimentoSaldo, percentual: investimentoPercentual, aporteConfirmadoMes }
   });
   if(error) avisarErro('Não foi possível salvar os dados de investimento.', error);
 }
@@ -1559,6 +1576,15 @@ document.getElementById('invPercentualInput').addEventListener('change', async (
   renderInvestimentos();
   await salvarInvestimentoConfig();
 });
+
+document.getElementById('btnConfirmarAporte').onclick = async ()=>{
+  if(aporteMesAtualSugerido <= 0) return;
+  if(!confirm(`Confirmar que você investiu ${fmtMoney(aporteMesAtualSugerido)} este mês? Esse valor será somado ao saldo investido.`)) return;
+  investimentoSaldo += aporteMesAtualSugerido;
+  aporteConfirmadoMes = mesesProjecao()[0];
+  renderInvestimentos();
+  await salvarInvestimentoConfig();
+};
 
 // Saldo do mês
 const inputSaldoEl = document.getElementById('inputSaldo');
