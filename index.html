@@ -340,7 +340,7 @@
 
     <table>
       <thead>
-        <tr><th>Descrição</th><th>Cartão</th><th>Valor/mês</th><th>Parcela</th><th>Termina em</th><th></th></tr>
+        <tr><th>Descrição</th><th>Cartão</th><th>Valor/mês</th><th>Parcela</th><th>Termina em</th><th>Fixa</th><th></th></tr>
       </thead>
       <tbody id="parcelaTableBody"></tbody>
     </table>
@@ -1052,6 +1052,9 @@ function renderParcelas(){
         <td>${fmtMoney(p.valorParcela)}</td>
         <td>${parcelaLabel}</td>
         <td>${terminoLabel}</td>
+        <td style="text-align:center;">
+          <input type="checkbox" class="parcela-fixa-checkbox" data-parcela-id="${p.id}" ${infinita?'checked':''} title="Marcar como despesa fixa (recorrente, sem data de término)">
+        </td>
         <td>
           <div class="row-actions">
             ${p.faturaPath ? `<a class="icon-btn" href="${p.faturaUrl}" target="_blank" rel="noopener" title="Ver fatura">📎</a>` : ''}
@@ -2071,6 +2074,23 @@ document.getElementById('parcelaTableBody').addEventListener('click', async (e)=
       const {error} = await db.from('parcelas').delete().eq('id', delId);
       if(error) avisarErro('Não foi possível excluir a parcela no servidor.', error);
     }
+  }
+});
+
+document.getElementById('parcelaTableBody').addEventListener('change', async (e)=>{
+  if(!e.target.classList.contains('parcela-fixa-checkbox')) return;
+  const id = e.target.getAttribute('data-parcela-id');
+  const p = parcelas.find(x=>x.id===id);
+  if(!p) return;
+
+  if(e.target.checked){
+    p.parcelasTotais = null;
+    renderParcelas();
+    const {error} = await db.from('parcelas').update({parcelas_totais: null}).eq('id', id);
+    if(error) avisarErro('Não foi possível marcar como fixa.', error);
+  } else {
+    e.target.checked = true; // uma vez marcada como fixa, desmarcar exige excluir e recadastrar
+    alert('Para voltar a ser uma parcela normal (com fim definido), exclua este item e cadastre de novo.');
   }
 });
 
