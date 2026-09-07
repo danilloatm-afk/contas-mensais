@@ -345,6 +345,18 @@
       <tbody id="parcelaTableBody"></tbody>
     </table>
     <div class="empty-state" id="emptyParcelaState" style="display:none;">Nenhuma parcela cadastrada. Envie uma fatura para começar.</div>
+
+    <div class="toolbar" style="margin-top:24px;">
+      <h2>Contas recorrentes</h2>
+    </div>
+    <div class="sub" style="margin-bottom:12px;">Contas marcadas como recorrente na aba Contas — só consulta aqui; para editar ou excluir, use a aba Contas.</div>
+    <table>
+      <thead>
+        <tr><th>Descrição</th><th>Categoria</th><th>Valor/mês</th><th>Dia</th></tr>
+      </thead>
+      <tbody id="contasRecorrentesTableBody"></tbody>
+    </table>
+    <div class="empty-state" id="emptyContasRecorrentesState" style="display:none;">Nenhuma conta recorrente cadastrada.</div>
   </div>
 
   <div id="tabInvestimentos" style="display:none;">
@@ -1066,8 +1078,31 @@ function renderParcelas(){
     });
   }
 
+  renderContasRecorrentesTable();
   renderProjecaoParcelas();
   renderProjecaoSaldo();
+}
+
+function renderContasRecorrentesTable(){
+  const tbody = document.getElementById('contasRecorrentesTableBody');
+  const empty = document.getElementById('emptyContasRecorrentesState');
+  const recorrentes = contas.filter(c => c.recorrente).slice().sort((a,b)=> a.descricao.localeCompare(b.descricao));
+  tbody.innerHTML = '';
+  if(recorrentes.length === 0){
+    empty.style.display = 'block';
+  } else {
+    empty.style.display = 'none';
+    recorrentes.forEach(c=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(c.descricao)}</td>
+        <td><span class="cat-badge"><span class="swatch" style="width:8px;height:8px;background:${getCatColor(c.categoria)}"></span> ${escapeHtml(c.categoria)}</span></td>
+        <td>${fmtMoney(c.valor)}</td>
+        <td>Dia ${c.dia}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
 }
 
 function renderProjecaoParcelas(){
