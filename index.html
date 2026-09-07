@@ -309,11 +309,12 @@
   </div>
 
   <div id="tabParcelas" style="display:none;">
-    <div class="cards" style="grid-template-columns:repeat(4,1fr);">
+    <div class="cards" style="grid-template-columns:repeat(5,1fr);">
       <div class="card"><div class="label">Parcelas de cartão (com fim)</div><div class="value" id="cardParcelasComFim">R$ 0,00</div></div>
       <div class="card"><div class="label">Despesas fixas</div><div class="value" id="cardDespesasFixas">R$ 0,00</div></div>
       <div class="card total"><div class="label">Total comprometido este mês</div><div class="value" id="cardParcelasMes">R$ 0,00</div></div>
       <div class="card"><div class="label">Itens ativos</div><div class="value" id="cardParcelasQtd">0</div></div>
+      <div class="card"><div class="label">Falta pagar (todas as parcelas)</div><div class="value" id="cardParcelasRestante">R$ 0,00</div></div>
     </div>
 
     <div class="chart-box" style="margin-bottom:24px;">
@@ -342,7 +343,7 @@
 
     <table>
       <thead>
-        <tr><th>Descrição</th><th>Cartão</th><th>Valor/mês</th><th>Parcela</th><th>Termina em</th><th>Fixa</th><th></th></tr>
+        <tr><th>Descrição</th><th>Cartão</th><th>Valor/mês</th><th>Parcela</th><th>Termina em</th><th>Falta pagar</th><th>Fixa</th><th></th></tr>
       </thead>
       <tbody id="parcelaTableBody"></tbody>
     </table>
@@ -721,6 +722,14 @@ function parcelaAtualDinamica(p){
   const diff = (y2-y1)*12 + (m2-m1) + 1;
   return Math.min(Math.max(diff,1), p.parcelasTotais);
 }
+function parcelasRestantesQtd(p){
+  if(p.parcelasTotais == null) return null;
+  return Math.max(0, p.parcelasTotais - parcelaAtualDinamica(p) + 1);
+}
+function valorRestanteParcela(p){
+  const restantes = parcelasRestantesQtd(p);
+  return restantes == null ? null : restantes * p.valorParcela;
+}
 function fileToBase64(file){
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1052,6 +1061,11 @@ function renderParcelas(){
   document.getElementById('cardParcelasMes').textContent = fmtMoney(totalMes);
   document.getElementById('cardParcelasQtd').textContent = parcelas.length;
 
+  const totalRestante = parcelas
+    .filter(p => p.parcelasTotais != null)
+    .reduce((s,p)=> s + valorRestanteParcela(p), 0);
+  document.getElementById('cardParcelasRestante').textContent = fmtMoney(totalRestante);
+
   const tbody = document.getElementById('parcelaTableBody');
   const empty = document.getElementById('emptyParcelaState');
   tbody.innerHTML = '';
@@ -1065,6 +1079,7 @@ function renderParcelas(){
       const [fy,fm] = fim.split('-');
       const parcelaLabel = infinita ? 'Recorrente' : (parcelaAtualDinamica(p) + '/' + p.parcelasTotais);
       const terminoLabel = infinita ? '—' : (fm + '/' + fy);
+      const restanteLabel = infinita ? '—' : fmtMoney(valorRestanteParcela(p));
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${escapeHtml(p.descricao)}</td>
@@ -1072,6 +1087,7 @@ function renderParcelas(){
         <td>${fmtMoney(p.valorParcela)}</td>
         <td>${parcelaLabel}</td>
         <td>${terminoLabel}</td>
+        <td>${restanteLabel}</td>
         <td style="text-align:center;">
           <input type="checkbox" class="parcela-fixa-checkbox" data-parcela-id="${p.id}" ${infinita?'checked':''} title="Marcar como despesa fixa (recorrente, sem data de término)">
         </td>
