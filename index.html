@@ -335,7 +335,10 @@
 
     <div class="toolbar">
       <h2>Parcelas em andamento</h2>
-      <div style="display:flex; gap:8px;">
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <select id="parcelaCartaoFiltro" style="background:var(--card2); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px;">
+          <option value="">Todos os cartões</option>
+        </select>
         <button class="secondary" id="btnAddDespesaFixa">+ Despesa fixa</button>
         <button class="primary" id="btnAddFatura">+ Nova fatura</button>
       </div>
@@ -373,7 +376,7 @@
         <div class="value" id="cardSaldoInvestido">R$ 0,00</div>
       </div>
       <div class="card">
-        <div class="label">Projetado em 12 meses</div>
+        <div class="label">Projetado em 12 meses (líquido)</div>
         <div class="value" id="cardInvestido12m">R$ 0,00</div>
       </div>
     </div>
@@ -1049,8 +1052,18 @@ function renderSaldoChart(){
 }
 
 function renderParcelas(){
+  // Popula o filtro de cartão com os cartões existentes, preservando a seleção atual
+  const filtroEl = document.getElementById('parcelaCartaoFiltro');
+  const filtroAtual = filtroEl.value;
+  const cartoesUnicos = [...new Set(parcelas.map(p=>p.cartao))].sort((a,b)=>a.localeCompare(b));
+  filtroEl.innerHTML = '<option value="">Todos os cartões</option>' +
+    cartoesUnicos.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  filtroEl.value = cartoesUnicos.includes(filtroAtual) ? filtroAtual : '';
+
+  const parcelasFiltradas = filtroEl.value ? parcelas.filter(p=>p.cartao===filtroEl.value) : parcelas;
+
   const hoje = ym(new Date());
-  const ativas = parcelas.filter(p => parcelaCobreMes(p, hoje));
+  const ativas = parcelasFiltradas.filter(p => parcelaCobreMes(p, hoje));
   const comFim = ativas.filter(p => p.parcelasTotais != null);
   const fixas = ativas.filter(p => p.parcelasTotais == null);
   const totalComFim = comFim.reduce((s,p)=>s+p.valorParcela, 0);
@@ -1059,9 +1072,9 @@ function renderParcelas(){
   document.getElementById('cardParcelasComFim').textContent = fmtMoney(totalComFim);
   document.getElementById('cardDespesasFixas').textContent = fmtMoney(totalFixas);
   document.getElementById('cardParcelasMes').textContent = fmtMoney(totalMes);
-  document.getElementById('cardParcelasQtd').textContent = parcelas.length;
+  document.getElementById('cardParcelasQtd').textContent = parcelasFiltradas.length;
 
-  const totalRestante = parcelas
+  const totalRestante = parcelasFiltradas
     .filter(p => p.parcelasTotais != null)
     .reduce((s,p)=> s + valorRestanteParcela(p), 0);
   document.getElementById('cardParcelasRestante').textContent = fmtMoney(totalRestante);
@@ -1069,11 +1082,12 @@ function renderParcelas(){
   const tbody = document.getElementById('parcelaTableBody');
   const empty = document.getElementById('emptyParcelaState');
   tbody.innerHTML = '';
-  if(parcelas.length === 0){
+  if(parcelasFiltradas.length === 0){
     empty.style.display = 'block';
+    empty.textContent = parcelas.length === 0 ? 'Nenhuma parcela cadastrada. Envie uma fatura para começar.' : 'Nenhuma parcela para esse cartão.';
   } else {
     empty.style.display = 'none';
-    parcelas.slice().sort((a,b)=> a.mesPrimeiraParcela.localeCompare(b.mesPrimeiraParcela)).forEach(p=>{
+    parcelasFiltradas.slice().sort((a,b)=> a.mesPrimeiraParcela.localeCompare(b.mesPrimeiraParcela)).forEach(p=>{
       const infinita = p.parcelasTotais == null;
       const fim = parcelaMesFim(p);
       const [fy,fm] = fim.split('-');
@@ -1316,7 +1330,7 @@ function renderInvestimentos(){
   // Cada aporte novo é um "cohort" separado, que envelhece com sua própria contagem de dias
   // a partir do mês em que entra na conta — não compartilha idade com os outros aportes.
   let acumuladoBase = investimentoSaldo;
-  const cohorts = []; // {valor, idadeMeses}
+  const cohorts = []; // {principal, valor, idadeMeses}
   const linhas = meses.map((m)=>{
     const sobra = calcularSaldoDisponivelMes(m);
     const aporte = Math.max(0, sobra * (investimentoPercentual/100));
@@ -1335,11 +1349,20 @@ function renderInvestimentos(){
     });
 
     // O aporte deste mês entra agora; começa a render a partir do mês seguinte.
-    if(aporte > 0) cohorts.push({valor: aporte, idadeMeses: 0});
+    if(aporte > 0) cohorts.push({principal: aporte, valor: aporte, idadeMeses: 0});
 
     const rendimento = rendimentoBase + rendimentoNovo;
     const rendimentoLiquido = rendimentoBase * (1 - 0.15) + rendimentoNovoLiquido;
-    const saldo = acumuladoBase + cohorts.reduce((s,c)=>s+c.valor, 0);
+
+    // Saldo líquido = quanto voltaria pro bolso se resgatasse tudo agora: o principal sempre
+    // volta inteiro, só o ganho acumulado de cada parte paga IR (pela idade daquela parte).
+    const ganhoBase = acumuladoBase - investimentoSaldo;
+    const saldoLiquidoBase = investimentoSaldo + ganhoBase * (1 - 0.15);
+    const saldoLiquidoCohorts = cohorts.reduce((s,c)=>{
+      const ganho = c.valor - c.principal;
+      return s + c.principal + ganho * (1 - taxaIR(c.idadeMeses * 30));
+    }, 0);
+    const saldo = saldoLiquidoBase + saldoLiquidoCohorts;
 
     return { mes: m, sobra, aporte, rendimento, rendimentoLiquido, saldo };
   });
@@ -1368,7 +1391,7 @@ function renderInvestimentos(){
       const valor = parseFloat(el.getAttribute('data-valor'));
       const rendimentoLiquido = parseFloat(el.getAttribute('data-rendimentoliquido'));
       const aporte = parseFloat(el.getAttribute('data-aporte'));
-      showTooltip(e, `<strong>${escapeHtml(mes)}</strong><br>Saldo total: ${fmtMoney(valor)}<br>Rendimento líquido do mês (já com IR): ${fmtMoney(rendimentoLiquido)}<br>Aporte sugerido: ${fmtMoney(aporte)}`);
+      showTooltip(e, `<strong>${escapeHtml(mes)}</strong><br>Saldo líquido (se resgatasse agora): ${fmtMoney(valor)}<br>Rendimento líquido do mês (já com IR): ${fmtMoney(rendimentoLiquido)}<br>Aporte sugerido: ${fmtMoney(aporte)}`);
     });
     el.addEventListener('mouseleave', hideTooltip);
   });
@@ -2044,6 +2067,7 @@ function openDespesaFixaModal(){
 }
 function closeDespesaFixaModal(){ despesaFixaOverlay.classList.remove('open'); }
 
+document.getElementById('parcelaCartaoFiltro').addEventListener('change', renderParcelas);
 document.getElementById('btnAddDespesaFixa').onclick = openDespesaFixaModal;
 document.getElementById('btnDfCancel').onclick = closeDespesaFixaModal;
 despesaFixaOverlay.addEventListener('click', (e)=>{ if(e.target===despesaFixaOverlay) closeDespesaFixaModal(); });
