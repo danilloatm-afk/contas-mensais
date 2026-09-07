@@ -2146,30 +2146,67 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
     const {error: upErr} = await db.storage.from('faturas').upload(path, file, {upsert:true});
     if(upErr) console.error(upErr);
 
-    const novasParcelas = data.parcelas.map(p => ({
-      id: uid(),
-      user_id: currentUserId,
-      cartao,
-      descricao: p.descricao,
-      valor_parcela: p.valor_parcela,
-      parcelas_totais: p.parcelas_totais,
-      mes_primeira_parcela: addMonths(mesFatura, -(p.parcela_atual - 1)),
-      fatura_path: upErr ? null : path
-    }));
+    // Compra já rastreada (mesmo cartão + descrição + mês de início) vira atualização, não duplicata.
+    const paraInserir = [];
+    const paraAtualizar = [];
+    data.parcelas.forEach(p => {
+      const mesPrimeiraParcela = addMonths(mesFatura, -(p.parcela_atual - 1));
+      const existente = parcelas.find(x =>
+        x.cartao === cartao && x.descricao === p.descricao && x.mesPrimeiraParcela === mesPrimeiraParcela
+      );
+      if(existente){
+        paraAtualizar.push({
+          id: existente.id,
+          valor_parcela: p.valor_parcela,
+          parcelas_totais: p.parcelas_totais,
+          fatura_path: upErr ? existente.faturaPath : path
+        });
+      } else {
+        paraInserir.push({
+          id: uid(), user_id: currentUserId, cartao, descricao: p.descricao,
+          valor_parcela: p.valor_parcela, parcelas_totais: p.parcelas_totais,
+          mes_primeira_parcela: mesPrimeiraParcela,
+          fatura_path: upErr ? null : path
+        });
+      }
+    });
 
-    const {error: insErr} = await db.from('parcelas').insert(novasParcelas);
-    if(insErr){
+    let erroSalvar = null;
+    if(paraInserir.length > 0){
+      const {error} = await db.from('parcelas').insert(paraInserir);
+      if(error) erroSalvar = error;
+    }
+    for(const upd of paraAtualizar){
+      const {error} = await db.from('parcelas')
+        .update({valor_parcela: upd.valor_parcela, parcelas_totais: upd.parcelas_totais, fatura_path: upd.fatura_path})
+        .eq('id', upd.id);
+      if(error) erroSalvar = error;
+    }
+    if(erroSalvar){
       status.style.color = 'var(--danger)';
-      status.textContent = 'Erro ao salvar as parcelas: ' + insErr.message;
+      status.textContent = 'Erro ao salvar as parcelas: ' + erroSalvar.message;
       btn.disabled = false;
       return;
     }
 
-    parcelas = parcelas.concat(novasParcelas.map(rowToParcela));
+    paraInserir.forEach(row => parcelas.push(rowToParcela(row)));
+    paraAtualizar.forEach(upd => {
+      const p = parcelas.find(x=>x.id===upd.id);
+      if(p){
+        p.valorParcela = upd.valor_parcela;
+        p.parcelasTotais = upd.parcelas_totais;
+        p.faturaPath = upd.fatura_path;
+        p.faturaUrl = faturaUrlFromPath(upd.fatura_path);
+      }
+    });
+
     btn.disabled = false;
     closeFaturaCartaoModal();
     renderParcelas();
-    alert(novasParcelas.length + ' parcela(s) importada(s) com sucesso!');
+    const partes = [];
+    if(paraInserir.length) partes.push(paraInserir.length + ' nova(s)');
+    if(paraAtualizar.length) partes.push(paraAtualizar.length + ' atualizada(s)');
+    alert('Fatura processada: ' + partes.join(' e ') + '.');
   } catch(e){
     status.style.color = 'var(--danger)';
     status.textContent = 'Erro inesperado: ' + e.message;
