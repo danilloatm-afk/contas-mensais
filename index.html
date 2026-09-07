@@ -127,6 +127,24 @@
   }
   .fatura-current a{color:var(--blue); text-decoration:none;}
   .fatura-current a:hover{text-decoration:underline;}
+
+  .renda-projecao-label{font-size:12px; color:var(--muted); margin-bottom:10px;}
+  .renda-projecao-bulk{display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;}
+  .renda-projecao-bulk input{
+    background:var(--card2); border:1px solid var(--border); color:var(--text);
+    padding:7px 10px; border-radius:8px; font-size:13px; max-width:140px;
+  }
+  .renda-projecao-row{display:flex; gap:8px; overflow-x:auto; padding-bottom:12px; margin-bottom:8px;}
+  .renda-projecao-item{
+    flex:0 0 auto; min-width:92px; background:var(--card2); border:1px solid var(--border);
+    border-radius:8px; padding:8px 10px;
+  }
+  .renda-projecao-item label{display:block; font-size:10px; color:var(--muted); margin-bottom:4px; white-space:nowrap;}
+  .renda-projecao-item input{
+    width:100%; background:transparent; border:none; color:var(--text);
+    font-size:13px; padding:0; font-family:inherit;
+  }
+  .renda-projecao-item input:focus{outline:none;}
   .empty-state{text-align:center; color:var(--muted); padding:40px; font-size:14px;}
   .recorrente-tag{font-size:10px; color:var(--blue); margin-left:6px;}
 
@@ -302,6 +320,12 @@
 
     <div class="chart-box" style="margin-bottom:24px;">
       <h3 id="projecaoSaldoTitulo">Projeção de saldo disponível</h3>
+      <div class="renda-projecao-label">Renda/saldo esperado por mês (opcional — ajuda a projeção a não ficar negativa à toa)</div>
+      <div class="renda-projecao-bulk">
+        <input type="text" inputmode="decimal" id="rendaBulkInput" placeholder="R$ 0,00">
+        <button class="secondary" id="btnRendaBulkAplicar">Aplicar a todos os meses</button>
+      </div>
+      <div class="renda-projecao-row" id="rendaProjecaoInputs"></div>
       <div id="projecaoSaldoChart"></div>
     </div>
 
@@ -1002,9 +1026,70 @@ function totalContasRecorrentes(monthStr){
   return contas.filter(c => c.recorrente && c.inicio <= monthStr).reduce((s,c)=>s+c.valor, 0);
 }
 
+function mesesProjecao(){
+  const mesBase = addMonths(ym(new Date()), 1); // mês seguinte ao atual (outubro, hoje)
+  const meses = [];
+  for(let i=0;i<12;i++) meses.push(addMonths(mesBase, i));
+  return meses;
+}
+
+document.getElementById('btnRendaBulkAplicar').onclick = async ()=>{
+  const input = document.getElementById('rendaBulkInput');
+  const val = parseCurrency(input.value);
+  if(!val){
+    alert('Informe um valor maior que zero.');
+    return;
+  }
+  mesesProjecao().forEach(m => { saldoPorMes[m] = val; });
+  input.value = '';
+  renderProjecaoSaldo();
+  const {error} = await db.from('config').upsert({chave:'saldo_por_mes', valor: saldoPorMes, user_id: currentUserId});
+  if(error) avisarErro('Não foi possível salvar a renda informada.', error);
+};
+
+function renderRendaProjecaoInputs(meses){
+  const row = document.getElementById('rendaProjecaoInputs');
+  const focused = document.activeElement;
+  const focusedMes = focused && focused.classList && focused.classList.contains('renda-projecao-input') ? focused.getAttribute('data-mes') : null;
+
+  row.innerHTML = meses.map(m=>{
+    const [y,mo] = m.split('-').map(Number);
+    const d = new Date(y, mo-1, 1);
+    const label = d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','') + '/' + String(y).slice(-2);
+    const val = saldoPorMes[m] || 0;
+    return `<div class="renda-projecao-item">
+      <label>${escapeHtml(label)}</label>
+      <input type="text" inputmode="decimal" class="renda-projecao-input" data-mes="${m}" placeholder="R$ 0,00" value="${val ? formatCurrencyInput(val) : ''}">
+    </div>`;
+  }).join('');
+
+  row.querySelectorAll('.renda-projecao-input').forEach(inp=>{
+    inp.addEventListener('focus', (e)=>{
+      const m = e.target.getAttribute('data-mes');
+      const val = saldoPorMes[m] || 0;
+      e.target.value = val ? String(val).replace('.',',') : '';
+    });
+    inp.addEventListener('blur', async (e)=>{
+      const m = e.target.getAttribute('data-mes');
+      const val = parseCurrency(e.target.value);
+      saldoPorMes[m] = val;
+      e.target.value = val ? formatCurrencyInput(val) : '';
+      renderProjecaoSaldo();
+      const {error} = await db.from('config').upsert({chave:'saldo_por_mes', valor: saldoPorMes, user_id: currentUserId});
+      if(error) avisarErro('Não foi possível salvar a renda informada.', error);
+    });
+    if(focusedMes && inp.getAttribute('data-mes') === focusedMes){
+      inp.focus();
+    }
+  });
+}
+
 function renderProjecaoSaldo(){
   const box = document.getElementById('projecaoSaldoChart');
-  const mesBase = addMonths(ym(new Date()), 1); // mês seguinte ao atual (outubro, hoje)
+  const meses = mesesProjecao();
+  const mesBase = meses[0];
+
+  renderRendaProjecaoInputs(meses);
 
   const saldoInformado = saldoPorMes[mesBase] || 0;
   const saldoBase = saldoInformado - totalContasPagas(mesBase) - gastosDoMes(mesBase).reduce((s,g)=>s+g.valor,0);
@@ -1014,13 +1099,11 @@ function renderProjecaoSaldo(){
   document.getElementById('projecaoSaldoTitulo').textContent =
     'Projeção de saldo disponível (base: ' + monthLabel(dataBase) + ')';
 
-  const meses = [];
-  for(let i=0;i<12;i++) meses.push(addMonths(mesBase, i));
-
   let acumulado = saldoBase;
   const valores = meses.map((m,i)=>{
     if(i===0) return saldoBase;
-    acumulado -= (totalContasRecorrentes(m) + parcelas.filter(p=>parcelaCobreMes(p,m)).reduce((s,p)=>s+p.valorParcela,0));
+    const renda = saldoPorMes[m] || 0;
+    acumulado += renda - (totalContasRecorrentes(m) + parcelas.filter(p=>parcelaCobreMes(p,m)).reduce((s,p)=>s+p.valorParcela,0));
     return acumulado;
   });
 
