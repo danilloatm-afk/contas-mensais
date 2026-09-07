@@ -423,8 +423,11 @@
         <input type="number" id="invPercentualInput" min="0" max="100" step="1" placeholder="70">
       </div>
       <div class="field" style="max-width:260px; display:inline-block; vertical-align:top; margin-left:16px;">
-        <label>Aporte sugerido deste mês</label>
-        <button class="primary" id="btnConfirmarAporte" style="display:block; width:100%;">Confirmar aporte de R$ 0,00</button>
+        <label>Aporte deste mês (edite se investiu outro valor)</label>
+        <div style="display:flex; gap:8px;">
+          <input type="text" inputmode="decimal" id="invAporteMesInput" placeholder="0,00" style="flex:1; min-width:0;">
+          <button class="primary" id="btnConfirmarAporte">Confirmar</button>
+        </div>
       </div>
     </div>
 
@@ -705,6 +708,7 @@ let investimentoSaldo = 0;
 let investimentoPercentual = 70;
 let aporteMesAtualSugerido = 0;
 let aporteConfirmadoMes = null; // YYYY-MM do último mês em que o usuário confirmou o aporte
+let aporteConfirmadoValor = 0; // valor que foi de fato confirmado (pode diferir do sugerido)
 let metaGastos = 0;
 let faturasHistorico = [];
 
@@ -835,6 +839,7 @@ async function carregarDados(){
   investimentoSaldo = invRow && invRow.valor ? (invRow.valor.saldo || 0) : 0;
   investimentoPercentual = invRow && invRow.valor && invRow.valor.percentual != null ? invRow.valor.percentual : 70;
   aporteConfirmadoMes = invRow && invRow.valor ? (invRow.valor.aporteConfirmadoMes || null) : null;
+  aporteConfirmadoValor = invRow && invRow.valor ? (invRow.valor.aporteConfirmadoValor || 0) : 0;
   const metaRow = configRows.find(r => r.chave === 'meta_gastos');
   metaGastos = metaRow && metaRow.valor ? (metaRow.valor.valor || 0) : 0;
 
@@ -1499,12 +1504,20 @@ function renderInvestimentos(){
 
   aporteMesAtualSugerido = linhas[0].aporte;
   const btnConfirmarAporte = document.getElementById('btnConfirmarAporte');
-  if(aporteConfirmadoMes === mesesProjecao()[0]){
-    btnConfirmarAporte.textContent = 'Aporte confirmado este mês ✓';
+  const inputAporteMes = document.getElementById('invAporteMesInput');
+  const jaConfirmadoEsteMes = aporteConfirmadoMes === mesesProjecao()[0];
+  if(document.activeElement !== inputAporteMes){
+    const valorExibido = jaConfirmadoEsteMes ? aporteConfirmadoValor : aporteMesAtualSugerido;
+    inputAporteMes.value = valorExibido ? formatCurrencyInput(valorExibido) : '';
+  }
+  if(jaConfirmadoEsteMes){
+    btnConfirmarAporte.textContent = 'Confirmado ✓';
     btnConfirmarAporte.disabled = true;
+    inputAporteMes.disabled = true;
   } else {
-    btnConfirmarAporte.textContent = `Confirmar aporte de ${fmtMoney(aporteMesAtualSugerido)}`;
-    btnConfirmarAporte.disabled = aporteMesAtualSugerido <= 0;
+    btnConfirmarAporte.textContent = 'Confirmar';
+    btnConfirmarAporte.disabled = false;
+    inputAporteMes.disabled = false;
   }
 
   // Gráfico
@@ -1552,7 +1565,7 @@ function renderInvestimentos(){
 async function salvarInvestimentoConfig(){
   const {error} = await db.from('config').upsert({
     chave:'investimento', user_id: currentUserId,
-    valor: { saldo: investimentoSaldo, percentual: investimentoPercentual, aporteConfirmadoMes }
+    valor: { saldo: investimentoSaldo, percentual: investimentoPercentual, aporteConfirmadoMes, aporteConfirmadoValor }
   });
   if(error) avisarErro('Não foi possível salvar os dados de investimento.', error);
 }
@@ -1578,10 +1591,15 @@ document.getElementById('invPercentualInput').addEventListener('change', async (
 });
 
 document.getElementById('btnConfirmarAporte').onclick = async ()=>{
-  if(aporteMesAtualSugerido <= 0) return;
-  if(!confirm(`Confirmar que você investiu ${fmtMoney(aporteMesAtualSugerido)} este mês? Esse valor será somado ao saldo investido.`)) return;
-  investimentoSaldo += aporteMesAtualSugerido;
+  const aporte = parseCurrency(document.getElementById('invAporteMesInput').value);
+  if(isNaN(aporte) || aporte <= 0){
+    alert('Informe um valor de aporte válido.');
+    return;
+  }
+  if(!confirm(`Confirmar que você investiu ${fmtMoney(aporte)} este mês? Esse valor será somado ao saldo investido.`)) return;
+  investimentoSaldo += aporte;
   aporteConfirmadoMes = mesesProjecao()[0];
+  aporteConfirmadoValor = aporte;
   renderInvestimentos();
   await salvarInvestimentoConfig();
 };
