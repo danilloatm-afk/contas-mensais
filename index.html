@@ -1333,7 +1333,9 @@ function renderRendaProjecaoInputs(meses){
 function calcularSaldoDisponivelMes(m){
   const renda = saldoPorMes[m] || 0;
   const parcelasMes = parcelas.filter(p=>parcelaCobreMes(p,m)).reduce((s,p)=>s+p.valorParcela,0);
-  return renda - totalContasRecorrentes(m) - parcelasMes - metaGastos;
+  const gastosMes = gastosDoMes(m).reduce((s,g)=>s+g.valor,0);
+  const gastoConsiderado = Math.max(metaGastos, gastosMes); // se já estourou a meta no mês, usa o gasto real
+  return renda - totalContasRecorrentes(m) - parcelasMes - gastoConsiderado;
 }
 
 function renderProjecaoSaldo(){
@@ -1346,9 +1348,14 @@ function renderProjecaoSaldo(){
   document.getElementById('projecaoSaldoTitulo').textContent = 'Projeção de saldo disponível por mês';
 
   const metaLabel = document.getElementById('metaGastosAplicadaLabel');
-  metaLabel.textContent = metaGastos > 0
-    ? `Meta de gastos diários aplicada nesse desconto: ${fmtMoney(metaGastos)}/mês (edite na aba Gastos diários).`
-    : 'Nenhuma meta de gastos diários definida ainda — nada está sendo descontado por gasto diário nesta projeção.';
+  const gastosMesBase = gastosDoMes(mesBase).reduce((s,g)=>s+g.valor,0);
+  if(metaGastos <= 0){
+    metaLabel.textContent = 'Nenhuma meta de gastos diários definida ainda — nada está sendo descontado por gasto diário nesta projeção.';
+  } else if(gastosMesBase > metaGastos){
+    metaLabel.textContent = `Meta de gastos diários: ${fmtMoney(metaGastos)}/mês, mas você já gastou ${fmtMoney(gastosMesBase)} neste mês — esse valor real (maior que a meta) é o que está sendo descontado agora.`;
+  } else {
+    metaLabel.textContent = `Meta de gastos diários aplicada nesse desconto: ${fmtMoney(metaGastos)}/mês (edite na aba Gastos diários).`;
+  }
 
   // Cada mês é calculado isoladamente, com a mesma fórmula em todos os meses:
   // renda daquele mês − contas recorrentes − parcelas ativas naquele mês.
