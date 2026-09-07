@@ -320,7 +320,7 @@
 
     <div class="chart-box" style="margin-bottom:24px;">
       <h3 id="projecaoSaldoTitulo">Projeção de saldo disponível</h3>
-      <div class="renda-projecao-label">Renda/saldo esperado por mês (opcional — ajuda a projeção a não ficar negativa à toa)</div>
+      <div class="renda-projecao-label">Informe a renda esperada de cada mês. O gráfico mostra, mês a mês, quanto sobraria daquela renda depois das contas recorrentes e parcelas do próprio mês (não acumula sobra de um mês pro outro).</div>
       <div class="renda-projecao-bulk">
         <input type="text" inputmode="decimal" id="rendaBulkInput" placeholder="R$ 0,00">
         <button class="secondary" id="btnRendaBulkAplicar">Aplicar a todos os meses</button>
@@ -1091,20 +1091,15 @@ function renderProjecaoSaldo(){
 
   renderRendaProjecaoInputs(meses);
 
-  const saldoInformado = saldoPorMes[mesBase] || 0;
-  const saldoBase = saldoInformado - totalContasPagas(mesBase) - gastosDoMes(mesBase).reduce((s,g)=>s+g.valor,0);
+  document.getElementById('projecaoSaldoTitulo').textContent = 'Projeção de saldo disponível por mês';
 
-  const [anoBase, mesBaseNum] = mesBase.split('-').map(Number);
-  const dataBase = new Date(anoBase, mesBaseNum - 1, 1);
-  document.getElementById('projecaoSaldoTitulo').textContent =
-    'Projeção de saldo disponível (base: ' + monthLabel(dataBase) + ')';
-
-  let acumulado = saldoBase;
-  const valores = meses.map((m,i)=>{
-    if(i===0) return saldoBase;
+  // Cada mês é calculado isoladamente, com a mesma fórmula em todos os meses:
+  // renda daquele mês − contas recorrentes − parcelas ativas naquele mês.
+  // Não acumula sobra de meses anteriores (não é um saldo de conta bancária).
+  const valores = meses.map((m)=>{
     const renda = saldoPorMes[m] || 0;
-    acumulado += renda - (totalContasRecorrentes(m) + parcelas.filter(p=>parcelaCobreMes(p,m)).reduce((s,p)=>s+p.valorParcela,0));
-    return acumulado;
+    const parcelasMes = parcelas.filter(p=>parcelaCobreMes(p,m)).reduce((s,p)=>s+p.valorParcela,0);
+    return renda - totalContasRecorrentes(m) - parcelasMes;
   });
 
   const maxAbs = Math.max(...valores.map(v=>Math.abs(v)), 1);
