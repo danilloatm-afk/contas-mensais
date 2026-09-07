@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Contas Mensais</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#0f172a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Contas Mensais">
 <style>
   :root{
     --bg:#0f172a; --card:#1e293b; --card2:#162032; --text:#e2e8f0; --muted:#94a3b8;
@@ -2654,6 +2662,12 @@ document.getElementById('faturasHistoricoTableBody').addEventListener('click', a
 });
 
 initAuth();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(e => console.error('Falha ao registrar service worker:', e));
+  });
+}
 </script>
 </body>
 </html>
