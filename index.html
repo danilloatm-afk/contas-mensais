@@ -1464,22 +1464,27 @@ function renderInvestimentos(){
   // a partir do mês em que entra na conta — não compartilha idade com os outros aportes.
   let acumuladoBase = investimentoSaldo;
   const cohorts = []; // {principal, valor, idadeMeses}
-  const linhas = meses.map((m)=>{
+  const linhas = meses.map((m, i)=>{
     const sobra = calcularSaldoDisponivelMes(m);
     const aporte = Math.max(0, sobra * (investimentoPercentual/100));
 
-    const rendimentoBase = acumuladoBase * taxaMensal;
-    acumuladoBase += rendimentoBase;
-
+    // O mês atual (i=0) representa "hoje": ainda não se passou um mês inteiro,
+    // então não aplica rendimento nesse primeiro passo — só a partir do mês seguinte.
+    let rendimentoBase = 0;
     let rendimentoNovo = 0;
     let rendimentoNovoLiquido = 0;
-    cohorts.forEach(c=>{
-      c.idadeMeses += 1;
-      const rend = c.valor * taxaMensal;
-      c.valor += rend;
-      rendimentoNovo += rend;
-      rendimentoNovoLiquido += rend * (1 - taxaIR(c.idadeMeses * 30));
-    });
+    if(i > 0){
+      rendimentoBase = acumuladoBase * taxaMensal;
+      acumuladoBase += rendimentoBase;
+
+      cohorts.forEach(c=>{
+        c.idadeMeses += 1;
+        const rend = c.valor * taxaMensal;
+        c.valor += rend;
+        rendimentoNovo += rend;
+        rendimentoNovoLiquido += rend * (1 - taxaIR(c.idadeMeses * 30));
+      });
+    }
 
     // O aporte deste mês entra agora; começa a render a partir do mês seguinte.
     if(aporte > 0) cohorts.push({principal: aporte, valor: aporte, idadeMeses: 0});
