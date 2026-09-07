@@ -357,6 +357,7 @@
         <select id="parcelaCartaoFiltro" style="background:var(--card2); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px;">
           <option value="">Todos os cartões</option>
         </select>
+        <button class="secondary" id="btnExcluirParcelasSelecionadas" style="display:none;">🗑 Excluir selecionadas (<span id="parcelaSelecionadasQtd">0</span>)</button>
         <button class="secondary" id="btnAddDespesaFixa">+ Despesa fixa</button>
         <button class="primary" id="btnAddFatura">+ Nova fatura</button>
       </div>
@@ -364,7 +365,7 @@
 
     <table>
       <thead>
-        <tr><th>Descrição</th><th>Cartão</th><th>Valor/mês</th><th>Parcela</th><th>Termina em</th><th>Falta pagar</th><th>Fixa</th><th></th></tr>
+        <tr><th style="width:32px;"><input type="checkbox" id="parcelaSelectAll" title="Selecionar todas"></th><th>Descrição</th><th>Cartão</th><th>Valor/mês</th><th>Parcela</th><th>Termina em</th><th>Falta pagar</th><th>Fixa</th><th></th></tr>
       </thead>
       <tbody id="parcelaTableBody"></tbody>
     </table>
@@ -381,6 +382,18 @@
       <tbody id="contasRecorrentesTableBody"></tbody>
     </table>
     <div class="empty-state" id="emptyContasRecorrentesState" style="display:none;">Nenhuma conta recorrente cadastrada.</div>
+
+    <div class="toolbar" style="margin-top:24px;">
+      <h2>Histórico de faturas</h2>
+    </div>
+    <div class="sub" style="margin-bottom:12px;">Toda fatura enviada fica guardada aqui por cartão e mês, mesmo depois de atualizada.</div>
+    <table>
+      <thead>
+        <tr><th>Cartão</th><th>Mês</th><th>Enviada em</th><th></th></tr>
+      </thead>
+      <tbody id="faturasHistoricoTableBody"></tbody>
+    </table>
+    <div class="empty-state" id="emptyFaturasHistoricoState" style="display:none;">Nenhuma fatura enviada ainda.</div>
   </div>
 
   <div id="tabInvestimentos" style="display:none;">
@@ -571,6 +584,10 @@
       <input type="text" id="fcCartao" placeholder="Ex: Nubank, Black, Platinum...">
     </div>
     <div class="field">
+      <label>Mês da fatura</label>
+      <input type="month" id="fcMes">
+    </div>
+    <div class="field">
       <label>Fatura (PDF ou foto)</label>
       <input type="file" id="fcFile" accept="application/pdf,image/*">
     </div>
@@ -682,6 +699,7 @@ let selicAnual = null;
 let investimentoSaldo = 0;
 let investimentoPercentual = 70;
 let metaGastos = 0;
+let faturasHistorico = [];
 
 function faturaUrlFromPath(path){
   if(!path) return null;
@@ -722,6 +740,12 @@ function rowToParcela(r){
     id:r.id, cartao:r.cartao, descricao:r.descricao, valorParcela:Number(r.valor_parcela),
     parcelasTotais:r.parcelas_totais, mesPrimeiraParcela:r.mes_primeira_parcela,
     faturaPath: r.fatura_path || null, faturaUrl: faturaUrlFromPath(r.fatura_path)
+  };
+}
+function rowToFaturaHistorico(r){
+  return {
+    id:r.id, cartao:r.cartao, mes:r.mes, faturaPath:r.fatura_path,
+    faturaUrl: faturaUrlFromPath(r.fatura_path), criadoEm: r.criado_em
   };
 }
 function addMonths(monthStr, n){
@@ -782,6 +806,9 @@ async function carregarDados(){
   contas = (contasRes.data || []).map(rowToConta);
   gastos = (gastosRes.data || []).map(rowToGasto);
   parcelas = (parcelasRes.data || []).map(rowToParcela);
+
+  const faturasHistRes = await db.from('faturas_mensais').select('*');
+  faturasHistorico = faturasHistRes.error ? [] : (faturasHistRes.data || []).map(rowToFaturaHistorico);
 
   if(catsRes.data && catsRes.data.length > 0){
     categorias = catsRes.data.map(c => ({nome:c.nome, cor:c.cor}));
@@ -1072,6 +1099,13 @@ function renderSaldoChart(){
   });
 }
 
+function atualizarBotaoExcluirSelecionadas(){
+  const marcadas = document.querySelectorAll('#parcelaTableBody .parcela-select-checkbox:checked');
+  const btn = document.getElementById('btnExcluirParcelasSelecionadas');
+  document.getElementById('parcelaSelecionadasQtd').textContent = marcadas.length;
+  btn.style.display = marcadas.length > 0 ? 'inline-flex' : 'none';
+}
+
 function renderParcelas(){
   // Popula o filtro de cartão com os cartões existentes, preservando a seleção atual
   const filtroEl = document.getElementById('parcelaCartaoFiltro');
@@ -1117,6 +1151,7 @@ function renderParcelas(){
       const restanteLabel = infinita ? '—' : fmtMoney(valorRestanteParcela(p));
       const tr = document.createElement('tr');
       tr.innerHTML = `
+        <td style="text-align:center;"><input type="checkbox" class="parcela-select-checkbox" data-parcela-id="${p.id}"></td>
         <td>${escapeHtml(p.descricao)}</td>
         <td>${escapeHtml(p.cartao)}</td>
         <td>${fmtMoney(p.valorParcela)}</td>
@@ -1137,9 +1172,42 @@ function renderParcelas(){
     });
   }
 
+  document.getElementById('parcelaSelectAll').checked = false;
+  atualizarBotaoExcluirSelecionadas();
+
   renderContasRecorrentesTable();
+  renderFaturasHistorico();
   renderProjecaoParcelas();
   renderProjecaoSaldo();
+}
+
+function renderFaturasHistorico(){
+  const tbody = document.getElementById('faturasHistoricoTableBody');
+  const empty = document.getElementById('emptyFaturasHistoricoState');
+  const lista = faturasHistorico.slice().sort((a,b)=> b.mes.localeCompare(a.mes) || a.cartao.localeCompare(b.cartao));
+  tbody.innerHTML = '';
+  if(lista.length === 0){
+    empty.style.display = 'block';
+  } else {
+    empty.style.display = 'none';
+    lista.forEach(f=>{
+      const [y,m] = f.mes.split('-');
+      const dataEnvio = f.criadoEm ? new Date(f.criadoEm).toLocaleDateString('pt-BR') : '—';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(f.cartao)}</td>
+        <td>${m}/${y}</td>
+        <td>${dataEnvio}</td>
+        <td>
+          <div class="row-actions">
+            <a class="icon-btn" href="${f.faturaUrl}" target="_blank" rel="noopener" title="Ver fatura">📎</a>
+            <button class="icon-btn" data-fatura-hist-del="${f.id}" title="Excluir">🗑</button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
 }
 
 function renderContasRecorrentesTable(){
@@ -1204,7 +1272,7 @@ function totalContasRecorrentes(monthStr){
 }
 
 function mesesProjecao(){
-  const mesBase = addMonths(ym(new Date()), 1); // mês seguinte ao atual (outubro, hoje)
+  const mesBase = ym(new Date()); // mês atual, incluído na projeção
   const meses = [];
   for(let i=0;i<12;i++) meses.push(addMonths(mesBase, i));
   return meses;
@@ -2142,6 +2210,7 @@ document.getElementById('btnLogout').onclick = async ()=>{
 const faturaCartaoOverlay = document.getElementById('faturaCartaoModalOverlay');
 function openFaturaCartaoModal(){
   document.getElementById('fcCartao').value = '';
+  document.getElementById('fcMes').value = ym(new Date());
   document.getElementById('fcFile').value = '';
   const status = document.getElementById('fcStatus');
   status.style.display = 'none';
@@ -2196,13 +2265,14 @@ document.getElementById('btnDfSalvar').onclick = async ()=>{
 
 document.getElementById('btnFcEnviar').onclick = async ()=>{
   const cartao = document.getElementById('fcCartao').value.trim();
+  const mesEscolhido = document.getElementById('fcMes').value;
   const file = document.getElementById('fcFile').files[0];
   const status = document.getElementById('fcStatus');
   const btn = document.getElementById('btnFcEnviar');
 
-  if(!cartao || !file){
+  if(!cartao || !mesEscolhido || !file){
     status.style.color = 'var(--danger)';
-    status.textContent = 'Preencha o cartão e escolha o arquivo da fatura.';
+    status.textContent = 'Preencha o cartão, o mês e escolha o arquivo da fatura.';
     status.style.display = 'block';
     return;
   }
@@ -2230,18 +2300,35 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
       btn.disabled = false;
       return;
     }
-    if(!data.parcelas || data.parcelas.length === 0){
-      status.style.color = 'var(--warn)';
-      status.textContent = 'Nenhuma compra parcelada encontrada nessa fatura.';
-      btn.disabled = false;
-      return;
-    }
-
-    const mesFatura = data.mes_fatura || ym(new Date());
+    const mesFatura = mesEscolhido;
 
     const path = `parcelas/${currentUserId}/${Date.now()}-${file.name}`;
     const {error: upErr} = await db.storage.from('faturas').upload(path, file, {upsert:true});
     if(upErr) console.error(upErr);
+
+    // Guarda/atualiza o histórico dessa fatura (1 por cartão + mês) — nunca perde o anexo de meses anteriores.
+    const histExistente = faturasHistorico.find(f => f.cartao === cartao && f.mes === mesFatura);
+    if(histExistente){
+      if(!upErr){
+        if(histExistente.faturaPath) await db.storage.from('faturas').remove([histExistente.faturaPath]);
+        const {error} = await db.from('faturas_mensais').update({fatura_path: path}).eq('id', histExistente.id);
+        if(error) console.error(error);
+        else { histExistente.faturaPath = path; histExistente.faturaUrl = faturaUrlFromPath(path); }
+      }
+    } else if(!upErr){
+      const novoHist = { id: uid(), user_id: currentUserId, cartao, mes: mesFatura, fatura_path: path, criado_em: new Date().toISOString() };
+      const {error} = await db.from('faturas_mensais').insert(novoHist);
+      if(error) console.error(error);
+      else faturasHistorico.push(rowToFaturaHistorico(novoHist));
+    }
+
+    if(!data.parcelas || data.parcelas.length === 0){
+      btn.disabled = false;
+      closeFaturaCartaoModal();
+      renderParcelas();
+      alert('Fatura guardada no histórico. Nenhuma compra parcelada encontrada nela.');
+      return;
+    }
 
     // Compra já rastreada (mesmo cartão + descrição + mês de início) vira atualização, não duplicata.
     const paraInserir = [];
@@ -2341,6 +2428,54 @@ document.getElementById('parcelaTableBody').addEventListener('change', async (e)
   } else {
     e.target.checked = true; // uma vez marcada como fixa, desmarcar exige excluir e recadastrar
     alert('Para voltar a ser uma parcela normal (com fim definido), exclua este item e cadastre de novo.');
+  }
+});
+
+document.getElementById('parcelaTableBody').addEventListener('change', (e)=>{
+  if(!e.target.classList.contains('parcela-select-checkbox')) return;
+  atualizarBotaoExcluirSelecionadas();
+  const todas = document.querySelectorAll('#parcelaTableBody .parcela-select-checkbox');
+  const marcadas = document.querySelectorAll('#parcelaTableBody .parcela-select-checkbox:checked');
+  document.getElementById('parcelaSelectAll').checked = todas.length > 0 && todas.length === marcadas.length;
+});
+
+document.getElementById('parcelaSelectAll').addEventListener('change', (e)=>{
+  document.querySelectorAll('#parcelaTableBody .parcela-select-checkbox').forEach(cb=>{ cb.checked = e.target.checked; });
+  atualizarBotaoExcluirSelecionadas();
+});
+
+document.getElementById('btnExcluirParcelasSelecionadas').onclick = async ()=>{
+  const ids = [...document.querySelectorAll('#parcelaTableBody .parcela-select-checkbox:checked')]
+    .map(cb=>cb.getAttribute('data-parcela-id'));
+  if(ids.length === 0) return;
+  if(!confirm(`Excluir ${ids.length} parcela(s) selecionada(s)?`)) return;
+
+  const btn = document.getElementById('btnExcluirParcelasSelecionadas');
+  btn.disabled = true;
+  const removidas = parcelas.filter(p=>ids.includes(p.id));
+  parcelas = parcelas.filter(p=>!ids.includes(p.id));
+  renderParcelas();
+
+  for(const p of removidas){
+    if(p.faturaPath) await db.storage.from('faturas').remove([p.faturaPath]);
+    const {error} = await db.from('parcelas').delete().eq('id', p.id);
+    if(error) avisarErro(`Não foi possível excluir "${p.descricao}" no servidor.`, error);
+  }
+  btn.disabled = false;
+};
+
+document.getElementById('faturasHistoricoTableBody').addEventListener('click', async (e)=>{
+  const delId = e.target.getAttribute('data-fatura-hist-del');
+  if(!delId) return;
+  if(confirm('Excluir esta fatura do histórico?')){
+    const f = faturasHistorico.find(x=>x.id===delId);
+    faturasHistorico = faturasHistorico.filter(x=>x.id!==delId);
+    renderFaturasHistorico();
+    if(f && f.faturaPath){
+      await db.storage.from('faturas').remove([f.faturaPath]);
+    }
+    const {error} = await db.from('faturas_mensais').delete().eq('id', delId);
+    if(error) avisarErro('Não foi possível excluir do histórico no servidor.', error);
   }
 });
 
