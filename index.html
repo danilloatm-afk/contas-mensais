@@ -309,9 +309,11 @@
   </div>
 
   <div id="tabParcelas" style="display:none;">
-    <div class="cards" style="grid-template-columns:repeat(2,1fr);">
-      <div class="card total"><div class="label">Comprometido este mês</div><div class="value" id="cardParcelasMes">R$ 0,00</div></div>
-      <div class="card"><div class="label">Parcelas ativas</div><div class="value" id="cardParcelasQtd">0</div></div>
+    <div class="cards" style="grid-template-columns:repeat(4,1fr);">
+      <div class="card"><div class="label">Parcelas de cartão (com fim)</div><div class="value" id="cardParcelasComFim">R$ 0,00</div></div>
+      <div class="card"><div class="label">Despesas fixas</div><div class="value" id="cardDespesasFixas">R$ 0,00</div></div>
+      <div class="card total"><div class="label">Total comprometido este mês</div><div class="value" id="cardParcelasMes">R$ 0,00</div></div>
+      <div class="card"><div class="label">Itens ativos</div><div class="value" id="cardParcelasQtd">0</div></div>
     </div>
 
     <div class="chart-box" style="margin-bottom:24px;">
@@ -1040,7 +1042,13 @@ function renderSaldoChart(){
 function renderParcelas(){
   const hoje = ym(new Date());
   const ativas = parcelas.filter(p => parcelaCobreMes(p, hoje));
-  const totalMes = ativas.reduce((s,p)=>s+p.valorParcela, 0);
+  const comFim = ativas.filter(p => p.parcelasTotais != null);
+  const fixas = ativas.filter(p => p.parcelasTotais == null);
+  const totalComFim = comFim.reduce((s,p)=>s+p.valorParcela, 0);
+  const totalFixas = fixas.reduce((s,p)=>s+p.valorParcela, 0);
+  const totalMes = totalComFim + totalFixas;
+  document.getElementById('cardParcelasComFim').textContent = fmtMoney(totalComFim);
+  document.getElementById('cardDespesasFixas').textContent = fmtMoney(totalFixas);
   document.getElementById('cardParcelasMes').textContent = fmtMoney(totalMes);
   document.getElementById('cardParcelasQtd').textContent = parcelas.length;
 
