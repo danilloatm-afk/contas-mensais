@@ -342,7 +342,7 @@
 
     <div class="chart-box" style="margin-bottom:24px;">
       <h3 id="projecaoSaldoTitulo">Projeção de saldo disponível</h3>
-      <div class="renda-projecao-label">Informe a renda esperada de cada mês. O gráfico mostra, mês a mês, quanto sobraria daquela renda depois das contas recorrentes e parcelas do próprio mês (não acumula sobra de um mês pro outro).</div>
+      <div class="renda-projecao-label">Informe a renda esperada de cada mês. O gráfico mostra, mês a mês, quanto sobraria daquela renda depois das contas recorrentes, parcelas do próprio mês e da meta de gastos diários (não acumula sobra de um mês pro outro).</div>
       <div class="renda-projecao-bulk">
         <input type="text" inputmode="decimal" id="rendaBulkInput" placeholder="R$ 0,00">
         <button class="secondary" id="btnRendaBulkAplicar">Aplicar a todos os meses</button>
@@ -1332,7 +1332,7 @@ function renderRendaProjecaoInputs(meses){
 function calcularSaldoDisponivelMes(m){
   const renda = saldoPorMes[m] || 0;
   const parcelasMes = parcelas.filter(p=>parcelaCobreMes(p,m)).reduce((s,p)=>s+p.valorParcela,0);
-  return renda - totalContasRecorrentes(m) - parcelasMes;
+  return renda - totalContasRecorrentes(m) - parcelasMes - metaGastos;
 }
 
 function renderProjecaoSaldo(){
