@@ -1309,8 +1309,9 @@ function renderInvestimentos(){
   const linhas = meses.map(m=>{
     const sobra = calcularSaldoDisponivelMes(m);
     const aporte = Math.max(0, sobra * (investimentoPercentual/100));
-    acumulado = acumulado * (1 + taxaMensal) + aporte;
-    return { mes: m, sobra, aporte, saldo: acumulado };
+    const rendimento = acumulado * taxaMensal;
+    acumulado = acumulado + rendimento + aporte;
+    return { mes: m, sobra, aporte, rendimento, saldo: acumulado };
   });
 
   document.getElementById('cardInvestido12m').textContent = fmtMoney(linhas[linhas.length-1].saldo);
@@ -1326,7 +1327,7 @@ function renderInvestimentos(){
     const barH = (l.saldo/maxVal) * 120;
     const x = i*(barW+gap) + 10;
     const y0 = 140 - barH;
-    bars += `<rect x="${x}" y="${y0}" width="${barW}" height="${Math.max(barH,1)}" rx="4" fill="#22c55e" class="inv-bar" data-mes="${monthLabel(d)}" data-valor="${l.saldo}"></rect>`;
+    bars += `<rect x="${x}" y="${y0}" width="${barW}" height="${Math.max(barH,1)}" rx="4" fill="#22c55e" class="inv-bar" data-mes="${monthLabel(d)}" data-valor="${l.saldo}" data-rendimento="${l.rendimento}" data-aporte="${l.aporte}"></rect>`;
     bars += `<text x="${x+barW/2}" y="155" font-size="9" fill="#94a3b8" text-anchor="middle">${d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</text>`;
   });
   const chartW = linhas.length*(barW+gap)+10;
@@ -1335,7 +1336,9 @@ function renderInvestimentos(){
     el.addEventListener('mousemove', (e)=>{
       const mes = el.getAttribute('data-mes');
       const valor = parseFloat(el.getAttribute('data-valor'));
-      showTooltip(e, `<strong>${escapeHtml(mes)}</strong><br>${fmtMoney(valor)}`);
+      const rendimento = parseFloat(el.getAttribute('data-rendimento'));
+      const aporte = parseFloat(el.getAttribute('data-aporte'));
+      showTooltip(e, `<strong>${escapeHtml(mes)}</strong><br>Saldo total: ${fmtMoney(valor)}<br>Rendimento do mês: ${fmtMoney(rendimento)}<br>Aporte sugerido: ${fmtMoney(aporte)}`);
     });
     el.addEventListener('mouseleave', hideTooltip);
   });
