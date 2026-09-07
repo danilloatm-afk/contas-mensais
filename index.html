@@ -225,6 +225,7 @@
     <button class="tab-btn active" data-tab="contas">Contas</button>
     <button class="tab-btn" data-tab="gastos">Gastos diários</button>
     <button class="tab-btn" data-tab="parcelas">Parcelas</button>
+    <button class="tab-btn" data-tab="investimentos">Investimentos</button>
     <button class="tab-btn" data-tab="config">Configurações</button>
   </div>
 
@@ -341,6 +342,46 @@
       <tbody id="parcelaTableBody"></tbody>
     </table>
     <div class="empty-state" id="emptyParcelaState" style="display:none;">Nenhuma parcela cadastrada. Envie uma fatura para começar.</div>
+  </div>
+
+  <div id="tabInvestimentos" style="display:none;">
+    <div class="cards" style="grid-template-columns:repeat(3,1fr);">
+      <div class="card">
+        <div class="label">Taxa Selic atual</div>
+        <div class="value" id="cardSelicAtual">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Saldo investido hoje</div>
+        <div class="value" id="cardSaldoInvestido">R$ 0,00</div>
+      </div>
+      <div class="card">
+        <div class="label">Projetado em 12 meses</div>
+        <div class="value" id="cardInvestido12m">R$ 0,00</div>
+      </div>
+    </div>
+
+    <div class="chart-box" style="margin-bottom:24px;">
+      <div class="field" style="max-width:220px; display:inline-block; margin-right:16px;">
+        <label>Saldo investido hoje (R$)</label>
+        <input type="text" inputmode="decimal" id="invSaldoInput" placeholder="0,00">
+      </div>
+      <div class="field" style="max-width:220px; display:inline-block;">
+        <label>% da sobra mensal a investir</label>
+        <input type="number" id="invPercentualInput" min="0" max="100" step="1" placeholder="70">
+      </div>
+    </div>
+
+    <div class="chart-box" style="margin-bottom:24px;">
+      <h3>Projeção de saldo investido (12 meses)</h3>
+      <div id="investimentoChart"></div>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Mês</th><th>Sobra do mês</th><th>Aporte sugerido</th><th>Saldo investido projetado</th></tr>
+      </thead>
+      <tbody id="investimentoTableBody"></tbody>
+    </table>
   </div>
 
   <div id="tabConfig" style="display:none;">
@@ -575,6 +616,10 @@ let parcelas = [];
 let viewDate = new Date(); viewDate.setDate(1);
 const EDGE_FUNCTION_URL = 'https://jvfyqvefznkpcvjaerta.supabase.co/functions/v1/cm-extract-fatura';
 
+let selicAnual = null;
+let investimentoSaldo = 0;
+let investimentoPercentual = 70;
+
 function faturaUrlFromPath(path){
   if(!path) return null;
   return db.storage.from('faturas').getPublicUrl(path).data.publicUrl;
@@ -679,10 +724,14 @@ async function carregarDados(){
   saldoPorMes = saldoRow ? (saldoRow.valor || {}) : {};
   const emailRow = configRows.find(r => r.chave === 'email');
   document.getElementById('inputEmail').value = emailRow ? (emailRow.valor || '') : '';
+  const invRow = configRows.find(r => r.chave === 'investimento');
+  investimentoSaldo = invRow && invRow.valor ? (invRow.valor.saldo || 0) : 0;
+  investimentoPercentual = invRow && invRow.valor && invRow.valor.percentual != null ? invRow.valor.percentual : 70;
 
   render();
   renderGastos();
   renderParcelas();
+  fetchSelicAnual();
 }
 
 function gastosDoMes(monthStr){
@@ -1084,6 +1133,12 @@ function renderRendaProjecaoInputs(meses){
   });
 }
 
+function calcularSaldoDisponivelMes(m){
+  const renda = saldoPorMes[m] || 0;
+  const parcelasMes = parcelas.filter(p=>parcelaCobreMes(p,m)).reduce((s,p)=>s+p.valorParcela,0);
+  return renda - totalContasRecorrentes(m) - parcelasMes;
+}
+
 function renderProjecaoSaldo(){
   const box = document.getElementById('projecaoSaldoChart');
   const meses = mesesProjecao();
@@ -1096,11 +1151,7 @@ function renderProjecaoSaldo(){
   // Cada mês é calculado isoladamente, com a mesma fórmula em todos os meses:
   // renda daquele mês − contas recorrentes − parcelas ativas naquele mês.
   // Não acumula sobra de meses anteriores (não é um saldo de conta bancária).
-  const valores = meses.map((m)=>{
-    const renda = saldoPorMes[m] || 0;
-    const parcelasMes = parcelas.filter(p=>parcelaCobreMes(p,m)).reduce((s,p)=>s+p.valorParcela,0);
-    return renda - totalContasRecorrentes(m) - parcelasMes;
-  });
+  const valores = meses.map(calcularSaldoDisponivelMes);
 
   const maxAbs = Math.max(...valores.map(v=>Math.abs(v)), 1);
   const barW = 30, gap = 12, height = 190, baselineY = 95, maxBarHeight = 70;
@@ -1130,6 +1181,114 @@ function renderProjecaoSaldo(){
     el.addEventListener('mouseleave', hideTooltip);
   });
 }
+
+async function fetchSelicAnual(){
+  try{
+    const resp = await fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json');
+    if(!resp.ok) throw new Error('status ' + resp.status);
+    const data = await resp.json();
+    selicAnual = parseFloat(data[0].valor.replace(',', '.'));
+  } catch(e){
+    console.error('Não foi possível buscar a Selic:', e);
+    selicAnual = null;
+  }
+  renderInvestimentos();
+}
+
+function renderInvestimentos(){
+  const cardSelic = document.getElementById('cardSelicAtual');
+  cardSelic.textContent = selicAnual != null ? selicAnual.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) + '% a.a.' : '—';
+
+  const inputSaldo = document.getElementById('invSaldoInput');
+  const inputPct = document.getElementById('invPercentualInput');
+  if(document.activeElement !== inputSaldo){
+    inputSaldo.value = investimentoSaldo ? formatCurrencyInput(investimentoSaldo) : '';
+  }
+  if(document.activeElement !== inputPct){
+    inputPct.value = investimentoPercentual;
+  }
+  document.getElementById('cardSaldoInvestido').textContent = fmtMoney(investimentoSaldo);
+
+  const meses = mesesProjecao();
+  const taxaMensal = selicAnual != null ? Math.pow(1 + selicAnual/100, 1/12) - 1 : 0;
+
+  let acumulado = investimentoSaldo;
+  const linhas = meses.map(m=>{
+    const sobra = calcularSaldoDisponivelMes(m);
+    const aporte = Math.max(0, sobra * (investimentoPercentual/100));
+    acumulado = acumulado * (1 + taxaMensal) + aporte;
+    return { mes: m, sobra, aporte, saldo: acumulado };
+  });
+
+  document.getElementById('cardInvestido12m').textContent = fmtMoney(linhas[linhas.length-1].saldo);
+
+  // Gráfico
+  const box = document.getElementById('investimentoChart');
+  const maxVal = Math.max(...linhas.map(l=>l.saldo), 1);
+  const barW = 30, gap = 12, height = 165;
+  let bars = '';
+  linhas.forEach((l,i)=>{
+    const [y,mo] = l.mes.split('-').map(Number);
+    const d = new Date(y, mo-1, 1);
+    const barH = (l.saldo/maxVal) * 120;
+    const x = i*(barW+gap) + 10;
+    const y0 = 140 - barH;
+    bars += `<rect x="${x}" y="${y0}" width="${barW}" height="${Math.max(barH,1)}" rx="4" fill="#22c55e" class="inv-bar" data-mes="${monthLabel(d)}" data-valor="${l.saldo}"></rect>`;
+    bars += `<text x="${x+barW/2}" y="155" font-size="9" fill="#94a3b8" text-anchor="middle">${d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</text>`;
+  });
+  const chartW = linhas.length*(barW+gap)+10;
+  box.innerHTML = `<svg width="${chartW}" height="${height}" viewBox="0 0 ${chartW} ${height}">${bars}</svg>`;
+  box.querySelectorAll('.inv-bar').forEach(el=>{
+    el.addEventListener('mousemove', (e)=>{
+      const mes = el.getAttribute('data-mes');
+      const valor = parseFloat(el.getAttribute('data-valor'));
+      showTooltip(e, `<strong>${escapeHtml(mes)}</strong><br>${fmtMoney(valor)}`);
+    });
+    el.addEventListener('mouseleave', hideTooltip);
+  });
+
+  // Tabela
+  const tbody = document.getElementById('investimentoTableBody');
+  tbody.innerHTML = linhas.map(l=>{
+    const [y,mo] = l.mes.split('-').map(Number);
+    const d = new Date(y, mo-1, 1);
+    const label = d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','') + '/' + String(y).slice(-2);
+    return `<tr>
+      <td>${escapeHtml(label)}</td>
+      <td>${fmtMoney(l.sobra)}</td>
+      <td>${fmtMoney(l.aporte)}</td>
+      <td>${fmtMoney(l.saldo)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function salvarInvestimentoConfig(){
+  const {error} = await db.from('config').upsert({
+    chave:'investimento', user_id: currentUserId,
+    valor: { saldo: investimentoSaldo, percentual: investimentoPercentual }
+  });
+  if(error) avisarErro('Não foi possível salvar os dados de investimento.', error);
+}
+
+const invSaldoEl = document.getElementById('invSaldoInput');
+invSaldoEl.addEventListener('focus', ()=>{
+  invSaldoEl.value = investimentoSaldo ? String(investimentoSaldo).replace('.',',') : '';
+});
+invSaldoEl.addEventListener('blur', async ()=>{
+  investimentoSaldo = parseCurrency(invSaldoEl.value);
+  invSaldoEl.value = investimentoSaldo ? formatCurrencyInput(investimentoSaldo) : '';
+  renderInvestimentos();
+  await salvarInvestimentoConfig();
+});
+document.getElementById('invPercentualInput').addEventListener('change', async (e)=>{
+  let val = parseInt(e.target.value, 10);
+  if(isNaN(val) || val<0) val = 0;
+  if(val>100) val = 100;
+  investimentoPercentual = val;
+  e.target.value = val;
+  renderInvestimentos();
+  await salvarInvestimentoConfig();
+});
 
 // Saldo do mês
 const inputSaldoEl = document.getElementById('inputSaldo');
@@ -1293,10 +1452,12 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     document.getElementById('tabContas').style.display = tab==='contas' ? '' : 'none';
     document.getElementById('tabGastos').style.display = tab==='gastos' ? '' : 'none';
     document.getElementById('tabParcelas').style.display = tab==='parcelas' ? '' : 'none';
+    document.getElementById('tabInvestimentos').style.display = tab==='investimentos' ? '' : 'none';
     document.getElementById('tabConfig').style.display = tab==='config' ? '' : 'none';
     if(tab==='config') renderCategorias();
     if(tab==='gastos') renderGastos();
     if(tab==='parcelas') renderParcelas();
+    if(tab==='investimentos') renderInvestimentos();
   });
 });
 
