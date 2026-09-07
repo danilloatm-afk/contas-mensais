@@ -1349,12 +1349,12 @@ function renderProjecaoSaldo(){
 
   const metaLabel = document.getElementById('metaGastosAplicadaLabel');
   const gastosMesBase = gastosDoMes(mesBase).reduce((s,g)=>s+g.valor,0);
-  if(metaGastos <= 0){
-    metaLabel.textContent = 'Nenhuma meta de gastos diários definida ainda — nada está sendo descontado por gasto diário nesta projeção.';
-  } else if(gastosMesBase > metaGastos){
-    metaLabel.textContent = `Meta de gastos diários: ${fmtMoney(metaGastos)}/mês, mas você já gastou ${fmtMoney(gastosMesBase)} neste mês — esse valor real (maior que a meta) é o que está sendo descontado agora.`;
+  if(metaGastos <= 0 && gastosMesBase <= 0){
+    metaLabel.textContent = 'Nenhuma meta de gastos diários definida e nenhum gasto lançado este mês ainda — nada está sendo descontado por gasto diário nesta projeção.';
   } else {
-    metaLabel.textContent = `Meta de gastos diários aplicada nesse desconto: ${fmtMoney(metaGastos)}/mês (edite na aba Gastos diários).`;
+    const gastoConsiderado = Math.max(metaGastos, gastosMesBase);
+    const fonte = gastosMesBase > metaGastos ? 'gasto real (maior que a meta)' : 'meta';
+    metaLabel.textContent = `Gasto diário até agora este mês: ${fmtMoney(gastosMesBase)} · Meta: ${fmtMoney(metaGastos)} · Descontado na projeção: ${fmtMoney(gastoConsiderado)} (${fonte}).`;
   }
 
   // Cada mês é calculado isoladamente, com a mesma fórmula em todos os meses:
