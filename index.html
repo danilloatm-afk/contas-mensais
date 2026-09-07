@@ -548,15 +548,15 @@
 
 <div class="modal-overlay" id="despesaFixaModalOverlay">
   <div class="modal">
-    <h3>Despesa fixa no cartão</h3>
-    <div class="sub" style="margin-bottom:16px;">Para cobranças que se repetem todo mês dentro da fatura, mas não são parceladas — ex: seguro, assinatura.</div>
+    <h3>Despesa fixa mensal</h3>
+    <div class="sub" style="margin-bottom:16px;">Para cobranças recorrentes que não vêm de uma fatura parcelada — seguro, assinatura, ou até uma estimativa fixa (ex: Mercado).</div>
     <div class="field">
       <label>Descrição</label>
-      <input type="text" id="dfDescricao" placeholder="Ex: YelumSeg (seguro do carro)">
+      <input type="text" id="dfDescricao" placeholder="Ex: YelumSeg (seguro do carro), Mercado...">
     </div>
     <div class="field">
-      <label>Cartão</label>
-      <input type="text" id="dfCartao" placeholder="Ex: Nubank, Black, Platinum...">
+      <label>Cartão (opcional)</label>
+      <input type="text" id="dfCartao" placeholder="Deixe em branco se não for no cartão">
     </div>
     <div class="field">
       <label>Valor mensal (R$)</label>
@@ -1958,11 +1958,11 @@ despesaFixaOverlay.addEventListener('click', (e)=>{ if(e.target===despesaFixaOve
 
 document.getElementById('btnDfSalvar').onclick = async ()=>{
   const descricao = document.getElementById('dfDescricao').value.trim();
-  const cartao = document.getElementById('dfCartao').value.trim();
+  const cartao = document.getElementById('dfCartao').value.trim() || '—';
   const valor = parseFloat(document.getElementById('dfValor').value);
 
-  if(!descricao || !cartao || isNaN(valor) || valor<=0){
-    alert('Preencha descrição, cartão e valor corretamente.');
+  if(!descricao || isNaN(valor) || valor<=0){
+    alert('Preencha descrição e valor corretamente.');
     return;
   }
 
