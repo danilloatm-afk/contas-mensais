@@ -1288,6 +1288,13 @@ async function fetchSelicAnual(){
   renderInvestimentos();
 }
 
+function taxaIR(diasCorridos){
+  if(diasCorridos <= 180) return 0.225;
+  if(diasCorridos <= 360) return 0.20;
+  if(diasCorridos <= 720) return 0.175;
+  return 0.15;
+}
+
 function renderInvestimentos(){
   const cardSelic = document.getElementById('cardSelicAtual');
   cardSelic.textContent = selicAnual != null ? selicAnual.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) + '% a.a.' : '—';
@@ -1305,13 +1312,36 @@ function renderInvestimentos(){
   const meses = mesesProjecao();
   const taxaMensal = selicAnual != null ? Math.pow(1 + selicAnual/100, 1/12) - 1 : 0;
 
-  let acumulado = investimentoSaldo;
-  const linhas = meses.map(m=>{
+  // Saldo já investido (capital antigo, já com mais de 720 dias) sempre na alíquota mínima de IR (15%).
+  // Cada aporte novo é um "cohort" separado, que envelhece com sua própria contagem de dias
+  // a partir do mês em que entra na conta — não compartilha idade com os outros aportes.
+  let acumuladoBase = investimentoSaldo;
+  const cohorts = []; // {valor, idadeMeses}
+  const linhas = meses.map((m)=>{
     const sobra = calcularSaldoDisponivelMes(m);
     const aporte = Math.max(0, sobra * (investimentoPercentual/100));
-    const rendimento = acumulado * taxaMensal;
-    acumulado = acumulado + rendimento + aporte;
-    return { mes: m, sobra, aporte, rendimento, saldo: acumulado };
+
+    const rendimentoBase = acumuladoBase * taxaMensal;
+    acumuladoBase += rendimentoBase;
+
+    let rendimentoNovo = 0;
+    let rendimentoNovoLiquido = 0;
+    cohorts.forEach(c=>{
+      c.idadeMeses += 1;
+      const rend = c.valor * taxaMensal;
+      c.valor += rend;
+      rendimentoNovo += rend;
+      rendimentoNovoLiquido += rend * (1 - taxaIR(c.idadeMeses * 30));
+    });
+
+    // O aporte deste mês entra agora; começa a render a partir do mês seguinte.
+    if(aporte > 0) cohorts.push({valor: aporte, idadeMeses: 0});
+
+    const rendimento = rendimentoBase + rendimentoNovo;
+    const rendimentoLiquido = rendimentoBase * (1 - 0.15) + rendimentoNovoLiquido;
+    const saldo = acumuladoBase + cohorts.reduce((s,c)=>s+c.valor, 0);
+
+    return { mes: m, sobra, aporte, rendimento, rendimentoLiquido, saldo };
   });
 
   document.getElementById('cardInvestido12m').textContent = fmtMoney(linhas[linhas.length-1].saldo);
@@ -1327,7 +1357,7 @@ function renderInvestimentos(){
     const barH = (l.saldo/maxVal) * 120;
     const x = i*(barW+gap) + 10;
     const y0 = 140 - barH;
-    bars += `<rect x="${x}" y="${y0}" width="${barW}" height="${Math.max(barH,1)}" rx="4" fill="#22c55e" class="inv-bar" data-mes="${monthLabel(d)}" data-valor="${l.saldo}" data-rendimento="${l.rendimento}" data-aporte="${l.aporte}"></rect>`;
+    bars += `<rect x="${x}" y="${y0}" width="${barW}" height="${Math.max(barH,1)}" rx="4" fill="#22c55e" class="inv-bar" data-mes="${monthLabel(d)}" data-valor="${l.saldo}" data-rendimento="${l.rendimento}" data-rendimentoliquido="${l.rendimentoLiquido}" data-aporte="${l.aporte}"></rect>`;
     bars += `<text x="${x+barW/2}" y="155" font-size="9" fill="#94a3b8" text-anchor="middle">${d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</text>`;
   });
   const chartW = linhas.length*(barW+gap)+10;
@@ -1336,9 +1366,9 @@ function renderInvestimentos(){
     el.addEventListener('mousemove', (e)=>{
       const mes = el.getAttribute('data-mes');
       const valor = parseFloat(el.getAttribute('data-valor'));
-      const rendimento = parseFloat(el.getAttribute('data-rendimento'));
+      const rendimentoLiquido = parseFloat(el.getAttribute('data-rendimentoliquido'));
       const aporte = parseFloat(el.getAttribute('data-aporte'));
-      showTooltip(e, `<strong>${escapeHtml(mes)}</strong><br>Saldo total: ${fmtMoney(valor)}<br>Rendimento do mês: ${fmtMoney(rendimento)}<br>Aporte sugerido: ${fmtMoney(aporte)}`);
+      showTooltip(e, `<strong>${escapeHtml(mes)}</strong><br>Saldo total: ${fmtMoney(valor)}<br>Rendimento líquido do mês (já com IR): ${fmtMoney(rendimentoLiquido)}<br>Aporte sugerido: ${fmtMoney(aporte)}`);
     });
     el.addEventListener('mouseleave', hideTooltip);
   });
