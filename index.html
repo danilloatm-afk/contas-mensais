@@ -486,6 +486,32 @@
     </div>
 
     <div class="chart-box" style="margin-bottom:24px;">
+      <div class="sub" style="margin-bottom:8px;">Aporte extra que acontece uma vez por ano (ex: PLR, 13º, restituição do IR) — somado ao aporte mensal sugerido no mês escolhido, todo ano, dentro da projeção.</div>
+      <div class="field" style="max-width:220px; display:inline-block; margin-right:16px;">
+        <label>Valor do aporte extra (R$)</label>
+        <input type="text" inputmode="decimal" id="invAporteExtraValorInput" placeholder="0,00">
+      </div>
+      <div class="field" style="max-width:220px; display:inline-block;">
+        <label>Mês em que recebe</label>
+        <select id="invAporteExtraMesInput">
+          <option value="">Nenhum</option>
+          <option value="1">Janeiro</option>
+          <option value="2">Fevereiro</option>
+          <option value="3">Março</option>
+          <option value="4">Abril</option>
+          <option value="5">Maio</option>
+          <option value="6">Junho</option>
+          <option value="7">Julho</option>
+          <option value="8">Agosto</option>
+          <option value="9">Setembro</option>
+          <option value="10">Outubro</option>
+          <option value="11">Novembro</option>
+          <option value="12">Dezembro</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="chart-box" style="margin-bottom:24px;">
       <h3>Projeção de saldo investido (24 meses)</h3>
       <div id="investimentoChart"></div>
     </div>
@@ -763,6 +789,8 @@ let investimentoPercentual = 70;
 let aporteMesAtualSugerido = 0;
 let aporteConfirmadoMes = null; // YYYY-MM do último mês em que o usuário confirmou o aporte
 let aporteConfirmadoValor = 0; // valor que foi de fato confirmado (pode diferir do sugerido)
+let aporteExtraValor = 0; // aporte extra anual (ex: PLR), somado no mês configurado
+let aporteExtraMes = null; // 1-12, ou null se não configurado
 let metaGastos = 0;
 let faturasHistorico = [];
 
@@ -894,6 +922,8 @@ async function carregarDados(){
   investimentoPercentual = invRow && invRow.valor && invRow.valor.percentual != null ? invRow.valor.percentual : 70;
   aporteConfirmadoMes = invRow && invRow.valor ? (invRow.valor.aporteConfirmadoMes || null) : null;
   aporteConfirmadoValor = invRow && invRow.valor ? (invRow.valor.aporteConfirmadoValor || 0) : 0;
+  aporteExtraValor = invRow && invRow.valor ? (invRow.valor.aporteExtraValor || 0) : 0;
+  aporteExtraMes = invRow && invRow.valor && invRow.valor.aporteExtraMes ? invRow.valor.aporteExtraMes : null;
   const metaRow = configRows.find(r => r.chave === 'meta_gastos');
   metaGastos = metaRow && metaRow.valor ? (metaRow.valor.valor || 0) : 0;
 
@@ -1561,6 +1591,12 @@ function renderInvestimentos(){
   }
   document.getElementById('cardSaldoInvestido').textContent = fmtMoney(investimentoSaldo);
 
+  const inputAporteExtraValor = document.getElementById('invAporteExtraValorInput');
+  if(document.activeElement !== inputAporteExtraValor){
+    inputAporteExtraValor.value = aporteExtraValor ? formatCurrencyInput(aporteExtraValor) : '';
+  }
+  document.getElementById('invAporteExtraMesInput').value = aporteExtraMes || '';
+
   const meses = mesesProjecao();
   const taxaMensal = selicAnual != null ? Math.pow(1 + selicAnual/100, 1/12) - 1 : 0;
 
@@ -1579,7 +1615,10 @@ function renderInvestimentos(){
   const cohorts = []; // {principal, valor, idadeMeses}
   const linhas = meses.map((m, i)=>{
     const sobra = calcularSaldoDisponivelMes(m);
-    const aporte = Math.max(0, sobra * (investimentoPercentual/100));
+    const aporteSugerido = Math.max(0, sobra * (investimentoPercentual/100));
+    const mesNumero = parseInt(m.split('-')[1], 10);
+    const aporteExtra = (aporteExtraMes && mesNumero === aporteExtraMes) ? aporteExtraValor : 0;
+    const aporte = aporteSugerido + aporteExtra;
 
     // No mês atual usa só a taxa dos dias restantes (o resto do mês já rendeu antes de hoje,
     // e isso já deveria estar refletido no "saldo investido hoje"); nos meses seguintes, mês cheio.
@@ -1682,7 +1721,7 @@ function renderInvestimentos(){
 async function salvarInvestimentoConfig(){
   const {error} = await db.from('config').upsert({
     chave:'investimento', user_id: currentUserId,
-    valor: { saldo: investimentoSaldo, percentual: investimentoPercentual, aporteConfirmadoMes, aporteConfirmadoValor }
+    valor: { saldo: investimentoSaldo, percentual: investimentoPercentual, aporteConfirmadoMes, aporteConfirmadoValor, aporteExtraValor, aporteExtraMes }
   });
   if(error) avisarErro('Não foi possível salvar os dados de investimento.', error);
 }
@@ -1703,6 +1742,21 @@ document.getElementById('invPercentualInput').addEventListener('change', async (
   if(val>100) val = 100;
   investimentoPercentual = val;
   e.target.value = val;
+  renderInvestimentos();
+  await salvarInvestimentoConfig();
+});
+
+const invAporteExtraValorEl = document.getElementById('invAporteExtraValorInput');
+invAporteExtraValorEl.addEventListener('focus', ()=>{
+  invAporteExtraValorEl.value = aporteExtraValor ? String(aporteExtraValor).replace('.',',') : '';
+});
+invAporteExtraValorEl.addEventListener('blur', async ()=>{
+  aporteExtraValor = parseCurrency(invAporteExtraValorEl.value);
+  renderInvestimentos();
+  await salvarInvestimentoConfig();
+});
+document.getElementById('invAporteExtraMesInput').addEventListener('change', async (e)=>{
+  aporteExtraMes = e.target.value ? parseInt(e.target.value, 10) : null;
   renderInvestimentos();
   await salvarInvestimentoConfig();
 });
