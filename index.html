@@ -385,10 +385,7 @@
       <div class="sub" style="margin-bottom:8px;">Escolha o que entra na conta:</div>
       <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; font-size:13px;">
         <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-          <input type="checkbox" id="filtroCompParcelas" checked> Parcelas de cartão (com fim)
-        </label>
-        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-          <input type="checkbox" id="filtroCompDespesasFixas" checked> Despesas fixas
+          <input type="checkbox" id="filtroCompParcelas" checked> Parcelas (cartão + despesas fixas)
         </label>
         <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
           <input type="checkbox" id="filtroCompContasRecorrentes" checked> Contas recorrentes
@@ -1310,13 +1307,12 @@ function renderProjecaoParcelas(){
     meses.push(new Date(hoje.getFullYear(), hoje.getMonth()+i, 1));
   }
   const incluirParcelas = document.getElementById('filtroCompParcelas').checked;
-  const incluirDespesasFixas = document.getElementById('filtroCompDespesasFixas').checked;
   const incluirContasRecorrentes = document.getElementById('filtroCompContasRecorrentes').checked;
   const valores = meses.map(d=>{
     const monthStr = ym(d);
-    const totalParcelas = parcelas
-      .filter(p => parcelaCobreMes(p, monthStr) && (p.parcelasTotais != null ? incluirParcelas : incluirDespesasFixas))
-      .reduce((s,p)=>s+p.valorParcela, 0);
+    const totalParcelas = incluirParcelas
+      ? parcelas.filter(p => parcelaCobreMes(p, monthStr)).reduce((s,p)=>s+p.valorParcela, 0)
+      : 0;
     const recorrentes = incluirContasRecorrentes ? totalContasRecorrentes(monthStr) : 0;
     return totalParcelas + recorrentes;
   });
@@ -1344,7 +1340,7 @@ function renderProjecaoParcelas(){
   });
 }
 
-['filtroCompParcelas','filtroCompDespesasFixas','filtroCompContasRecorrentes'].forEach(id=>{
+['filtroCompParcelas','filtroCompContasRecorrentes'].forEach(id=>{
   document.getElementById(id).addEventListener('change', renderProjecaoParcelas);
 });
 
