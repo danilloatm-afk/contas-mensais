@@ -381,7 +381,7 @@
     </div>
 
     <div class="chart-box" style="margin-bottom:24px;">
-      <h3>Projeção de amortização (próximos 12 meses)</h3>
+      <h3>Projeção de amortização (próximos 24 meses)</h3>
       <div id="projecaoChart"></div>
     </div>
 
@@ -453,7 +453,7 @@
         <div class="value" id="cardSaldoInvestido">R$ 0,00</div>
       </div>
       <div class="card">
-        <div class="label">Projetado em 12 meses (líquido)</div>
+        <div class="label">Projetado em 24 meses (líquido)</div>
         <div class="value" id="cardInvestido12m">R$ 0,00</div>
       </div>
     </div>
@@ -477,7 +477,7 @@
     </div>
 
     <div class="chart-box" style="margin-bottom:24px;">
-      <h3>Projeção de saldo investido (12 meses)</h3>
+      <h3>Projeção de saldo investido (24 meses)</h3>
       <div id="investimentoChart"></div>
     </div>
 
@@ -1294,7 +1294,7 @@ function renderProjecaoParcelas(){
   const box = document.getElementById('projecaoChart');
   const hoje = new Date(); hoje.setDate(1);
   const meses = [];
-  for(let i=0;i<12;i++){
+  for(let i=0;i<24;i++){
     meses.push(new Date(hoje.getFullYear(), hoje.getMonth()+i, 1));
   }
   const valores = meses.map(d=>{
@@ -1310,7 +1310,7 @@ function renderProjecaoParcelas(){
     const x = i*(barW+gap) + 10;
     const y = 140 - barH;
     bars += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="4" fill="#6366f1" class="proj-bar" data-mes="${monthLabel(d)}" data-valor="${val}"></rect>`;
-    bars += `<text x="${x+barW/2}" y="155" font-size="9" fill="#94a3b8" text-anchor="middle">${d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</text>`;
+    bars += `<text x="${x+barW/2}" y="155" font-size="9" fill="#94a3b8" text-anchor="middle">${d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}/${String(d.getFullYear()).slice(-2)}</text>`;
   });
   const chartW = meses.length*(barW+gap)+10;
   box.innerHTML = `<svg width="${chartW}" height="${height}" viewBox="0 0 ${chartW} ${height}">${bars}</svg>`;
@@ -1351,7 +1351,7 @@ function totalContasRecorrentes(monthStr){
 function mesesProjecao(){
   const mesBase = ym(new Date()); // mês atual, incluído na projeção
   const meses = [];
-  for(let i=0;i<12;i++) meses.push(addMonths(mesBase, i));
+  for(let i=0;i<24;i++) meses.push(addMonths(mesBase, i));
   return meses;
 }
 
@@ -1492,7 +1492,7 @@ function renderProjecaoSaldo(){
     const y0 = isPositive ? baselineY - barH : baselineY;
     const color = isPositive ? '#22c55e' : '#ef4444';
     bars += `<rect x="${x}" y="${y0}" width="${barW}" height="${barH}" rx="4" fill="${color}" opacity="${i===0?1:0.75}" class="proj-saldo-bar" data-mes="${monthLabel(d)}" data-valor="${val}"></rect>`;
-    bars += `<text x="${x+barW/2}" y="${height-10}" font-size="9" fill="#94a3b8" text-anchor="middle">${d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</text>`;
+    bars += `<text x="${x+barW/2}" y="${height-10}" font-size="9" fill="#94a3b8" text-anchor="middle">${d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}/${String(d.getFullYear()).slice(-2)}</text>`;
   });
   const chartW = meses.length*(barW+gap)+10;
   const baseline = `<line x1="2" y1="${baselineY}" x2="${chartW-2}" y2="${baselineY}" stroke="#334155" stroke-width="1"></line>`;
@@ -1630,7 +1630,7 @@ function renderInvestimentos(){
     const x = i*(barW+gap) + 10;
     const y0 = 140 - barH;
     bars += `<rect x="${x}" y="${y0}" width="${barW}" height="${Math.max(barH,1)}" rx="4" fill="#22c55e" class="inv-bar" data-mes="${monthLabel(d)}" data-valor="${l.saldo}" data-rendimento="${l.rendimento}" data-rendimentoliquido="${l.rendimentoLiquido}" data-aporte="${l.aporte}"></rect>`;
-    bars += `<text x="${x+barW/2}" y="155" font-size="9" fill="#94a3b8" text-anchor="middle">${d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</text>`;
+    bars += `<text x="${x+barW/2}" y="155" font-size="9" fill="#94a3b8" text-anchor="middle">${d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}/${String(d.getFullYear()).slice(-2)}</text>`;
   });
   const chartW = linhas.length*(barW+gap)+10;
   box.innerHTML = `<svg width="${chartW}" height="${height}" viewBox="0 0 ${chartW} ${height}">${bars}</svg>`;
