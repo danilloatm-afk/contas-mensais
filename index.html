@@ -518,7 +518,7 @@
 
     <table>
       <thead>
-        <tr><th>Mês</th><th>Sobra do mês</th><th>Aporte sugerido</th><th>Saldo investido projetado</th></tr>
+        <tr><th>Mês</th><th>Sobra do mês</th><th>Aporte sugerido</th><th>Renda passiva do mês</th><th>Saldo investido projetado</th></tr>
       </thead>
       <tbody id="investimentoTableBody"></tbody>
     </table>
@@ -1713,6 +1713,7 @@ function renderInvestimentos(){
       <td>${escapeHtml(label)}</td>
       <td>${fmtMoney(l.sobra)}</td>
       <td>${fmtMoney(l.aporte)}</td>
+      <td>${fmtMoney(l.rendimentoLiquido)}</td>
       <td>${fmtMoney(l.saldo)}</td>
     </tr>`;
   }).join('');
