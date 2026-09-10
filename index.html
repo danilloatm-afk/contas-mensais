@@ -382,7 +382,18 @@
 
     <div class="chart-box" style="margin-bottom:24px;">
       <h3>Comprometimento mensal projetado (próximos 24 meses)</h3>
-      <div class="sub" style="margin-bottom:8px;">Parcelas de cartão + despesas fixas + contas recorrentes.</div>
+      <div class="sub" style="margin-bottom:8px;">Escolha o que entra na conta:</div>
+      <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; font-size:13px;">
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+          <input type="checkbox" id="filtroCompParcelas" checked> Parcelas de cartão (com fim)
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+          <input type="checkbox" id="filtroCompDespesasFixas" checked> Despesas fixas
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+          <input type="checkbox" id="filtroCompContasRecorrentes" checked> Contas recorrentes
+        </label>
+      </div>
       <div id="projecaoChart"></div>
     </div>
 
@@ -1298,10 +1309,16 @@ function renderProjecaoParcelas(){
   for(let i=0;i<24;i++){
     meses.push(new Date(hoje.getFullYear(), hoje.getMonth()+i, 1));
   }
+  const incluirParcelas = document.getElementById('filtroCompParcelas').checked;
+  const incluirDespesasFixas = document.getElementById('filtroCompDespesasFixas').checked;
+  const incluirContasRecorrentes = document.getElementById('filtroCompContasRecorrentes').checked;
   const valores = meses.map(d=>{
     const monthStr = ym(d);
-    const totalParcelas = parcelas.filter(p => parcelaCobreMes(p, monthStr)).reduce((s,p)=>s+p.valorParcela, 0);
-    return totalParcelas + totalContasRecorrentes(monthStr);
+    const totalParcelas = parcelas
+      .filter(p => parcelaCobreMes(p, monthStr) && (p.parcelasTotais != null ? incluirParcelas : incluirDespesasFixas))
+      .reduce((s,p)=>s+p.valorParcela, 0);
+    const recorrentes = incluirContasRecorrentes ? totalContasRecorrentes(monthStr) : 0;
+    return totalParcelas + recorrentes;
   });
   const max = Math.max(...valores, 1);
   const barW = 30, gap = 12, height = 165;
@@ -1326,6 +1343,10 @@ function renderProjecaoParcelas(){
     el.addEventListener('mouseleave', hideTooltip);
   });
 }
+
+['filtroCompParcelas','filtroCompDespesasFixas','filtroCompContasRecorrentes'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', renderProjecaoParcelas);
+});
 
 function normalizarDescricao(s){
   return (s||'').toLowerCase().normalize('NFD').replace(new RegExp('[̀-ͯ]', 'g'), '').trim();
