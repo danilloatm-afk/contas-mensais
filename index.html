@@ -381,7 +381,8 @@
     </div>
 
     <div class="chart-box" style="margin-bottom:24px;">
-      <h3>Projeção de amortização (próximos 24 meses)</h3>
+      <h3>Comprometimento mensal projetado (próximos 24 meses)</h3>
+      <div class="sub" style="margin-bottom:8px;">Parcelas de cartão + despesas fixas + contas recorrentes.</div>
       <div id="projecaoChart"></div>
     </div>
 
@@ -1299,7 +1300,8 @@ function renderProjecaoParcelas(){
   }
   const valores = meses.map(d=>{
     const monthStr = ym(d);
-    return parcelas.filter(p => parcelaCobreMes(p, monthStr)).reduce((s,p)=>s+p.valorParcela, 0);
+    const totalParcelas = parcelas.filter(p => parcelaCobreMes(p, monthStr)).reduce((s,p)=>s+p.valorParcela, 0);
+    return totalParcelas + totalContasRecorrentes(monthStr);
   });
   const max = Math.max(...valores, 1);
   const barW = 30, gap = 12, height = 165;
