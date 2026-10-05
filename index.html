@@ -1251,6 +1251,21 @@ function renderParcelas(){
     empty.textContent = parcelas.length === 0 ? 'Nenhuma parcela cadastrada. Envie uma fatura para começar.' : 'Nenhuma parcela para esse cartão.';
   } else {
     empty.style.display = 'none';
+
+    // Totalizador no topo da tabela: soma do Valor/mês das parcelas ainda ativas (as já quitadas não contam).
+    const ativasTabela = parcelasFiltradas.filter(p => !parcelaEncerrada(p));
+    const totalValorMes = ativasTabela.reduce((s,p) => s + p.valorParcela, 0);
+    const trTotal = document.createElement('tr');
+    trTotal.style.background = 'var(--card2)';
+    trTotal.innerHTML = `
+      <td></td>
+      <td><strong>Total${filtroEl.value ? ' — ' + escapeHtml(filtroEl.value) : ''}</strong> <span style="color:var(--muted); font-size:12px;">(${ativasTabela.length} ativas)</span></td>
+      <td></td>
+      <td><strong style="color:var(--accent);">${fmtMoney(totalValorMes)}</strong></td>
+      <td colspan="5"></td>
+    `;
+    tbody.appendChild(trTotal);
+
     parcelasFiltradas.slice().sort((a,b)=> a.mesPrimeiraParcela.localeCompare(b.mesPrimeiraParcela)).forEach(p=>{
       const infinita = p.parcelasTotais == null;
       const fim = parcelaMesFim(p);
