@@ -861,13 +861,25 @@ function parcelaAtualDinamica(p){
   const diff = (y2-y1)*12 + (m2-m1) + 1;
   return Math.min(Math.max(diff,1), p.parcelasTotais);
 }
+function parcelaEncerrada(p){
+  return p.parcelasTotais != null && parcelaMesFim(p) < ym(new Date());
+}
 function parcelasRestantesQtd(p){
   if(p.parcelasTotais == null) return null;
+  if(parcelaEncerrada(p)) return 0;
   return Math.max(0, p.parcelasTotais - parcelaAtualDinamica(p) + 1);
 }
 function valorRestanteParcela(p){
   const restantes = parcelasRestantesQtd(p);
   return restantes == null ? null : restantes * p.valorParcela;
+}
+// O mesmo arquivo de fatura é referenciado pelo histórico e por várias parcelas — só apaga do
+// storage se nenhum deles aponta mais pra ele (chamar DEPOIS de tirar o item excluído da memória).
+async function removerArquivoFaturaSeLivre(path){
+  if(!path) return;
+  if(faturasHistorico.some(f => f.faturaPath === path)) return;
+  if(parcelas.some(p => p.faturaPath === path)) return;
+  await db.storage.from('faturas').remove([path]);
 }
 function fileToBase64(file){
   return new Promise((resolve, reject) => {
@@ -1224,7 +1236,7 @@ function renderParcelas(){
   document.getElementById('cardParcelasComFim').textContent = fmtMoney(totalComFim);
   document.getElementById('cardDespesasFixas').textContent = fmtMoney(totalFixas);
   document.getElementById('cardParcelasMes').textContent = fmtMoney(totalMes);
-  document.getElementById('cardParcelasQtd').textContent = parcelasFiltradas.length;
+  document.getElementById('cardParcelasQtd').textContent = parcelasFiltradas.filter(p => !parcelaEncerrada(p)).length;
 
   const totalRestante = parcelasFiltradas
     .filter(p => p.parcelasTotais != null)
@@ -1243,7 +1255,7 @@ function renderParcelas(){
       const infinita = p.parcelasTotais == null;
       const fim = parcelaMesFim(p);
       const [fy,fm] = fim.split('-');
-      const parcelaLabel = infinita ? 'Recorrente' : (parcelaAtualDinamica(p) + '/' + p.parcelasTotais);
+      const parcelaLabel = infinita ? 'Recorrente' : (parcelaEncerrada(p) ? 'Quitada' : (parcelaAtualDinamica(p) + '/' + p.parcelasTotais));
       const terminoLabel = infinita ? '—' : (fm + '/' + fy);
       const restanteLabel = infinita ? '—' : fmtMoney(valorRestanteParcela(p));
       const tr = document.createElement('tr');
@@ -2565,10 +2577,18 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
     const histExistente = faturasHistorico.find(f => f.cartao === cartao && f.mes === mesFatura);
     if(histExistente){
       if(!upErr){
-        if(histExistente.faturaPath) await db.storage.from('faturas').remove([histExistente.faturaPath]);
+        const caminhoAntigo = histExistente.faturaPath;
         const {error} = await db.from('faturas_mensais').update({fatura_path: path}).eq('id', histExistente.id);
         if(error) console.error(error);
-        else { histExistente.faturaPath = path; histExistente.faturaUrl = faturaUrlFromPath(path); }
+        else {
+          histExistente.faturaPath = path; histExistente.faturaUrl = faturaUrlFromPath(path);
+          if(caminhoAntigo){
+            // parcelas que apontavam pra versão antiga dessa mesma fatura passam a apontar pra nova
+            await db.from('parcelas').update({fatura_path: path}).eq('fatura_path', caminhoAntigo);
+            parcelas.forEach(p => { if(p.faturaPath === caminhoAntigo){ p.faturaPath = path; p.faturaUrl = faturaUrlFromPath(path); } });
+            await db.storage.from('faturas').remove([caminhoAntigo]);
+          }
+        }
       }
     } else if(!upErr){
       const novoHist = { id: uid(), user_id: currentUserId, cartao, mes: mesFatura, fatura_path: path, criado_em: new Date().toISOString() };
@@ -2577,18 +2597,12 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
       else faturasHistorico.push(rowToFaturaHistorico(novoHist));
     }
 
-    if(!data.parcelas || data.parcelas.length === 0){
-      btn.disabled = false;
-      closeFaturaCartaoModal();
-      renderParcelas();
-      alert('Fatura guardada no histórico. Nenhuma compra parcelada encontrada nela.');
-      return;
-    }
+    const itensFatura = data.parcelas || [];
 
     // Compra já rastreada (mesmo cartão + descrição + mês de início) vira atualização, não duplicata.
     const paraInserir = [];
     const paraAtualizar = [];
-    data.parcelas.forEach(p => {
+    itensFatura.forEach(p => {
       const mesPrimeiraParcela = addMonths(mesFatura, -(p.parcela_atual - 1));
       const existente = parcelas.find(x =>
         x.cartao === cartao && x.descricao === p.descricao && x.mesPrimeiraParcela === mesPrimeiraParcela
@@ -2610,6 +2624,27 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
       }
     });
 
+    // A fatura mais recente do cartão é a "foto" do que está ativo: parcela com fim que não aparece
+    // mais nela já terminou (ou foi cancelada) e sai da lista. Despesas fixas (sem fim) nunca são
+    // mexidas. Reenvio de um mês antigo (retroativo) não remove nada.
+    let paraRemover = [];
+    const ehFaturaMaisRecente = !faturasHistorico.some(f => f.cartao === cartao && f.mes > mesFatura);
+    if(ehFaturaMaisRecente){
+      const idsNaFatura = new Set(paraAtualizar.map(u => u.id));
+      paraRemover = parcelas.filter(p =>
+        p.cartao === cartao && p.parcelasTotais != null &&
+        !idsNaFatura.has(p.id) && p.mesPrimeiraParcela <= mesFatura
+      );
+    }
+    if(paraRemover.length > 0){
+      const [fy, fm] = mesFatura.split('-');
+      const lista = paraRemover.map(p => '• ' + p.descricao + ' (' + fmtMoney(p.valorParcela) + '/mês)').join('\n');
+      const ok = confirm('Estas parcelas do cartão ' + cartao + ' não aparecem na fatura de ' + fm + '/' + fy +
+        ' (já terminaram de ser pagas ou foram canceladas) e serão removidas da lista:\n\n' + lista +
+        '\n\nA fatura antiga continua guardada no histórico. Remover da lista?');
+      if(!ok) paraRemover = [];
+    }
+
     let erroSalvar = null;
     if(paraInserir.length > 0){
       const {error} = await db.from('parcelas').insert(paraInserir);
@@ -2619,6 +2654,10 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
       const {error} = await db.from('parcelas')
         .update({valor_parcela: upd.valor_parcela, parcelas_totais: upd.parcelas_totais, fatura_path: upd.fatura_path})
         .eq('id', upd.id);
+      if(error) erroSalvar = error;
+    }
+    if(paraRemover.length > 0){
+      const {error} = await db.from('parcelas').delete().in('id', paraRemover.map(p => p.id));
       if(error) erroSalvar = error;
     }
     if(erroSalvar){
@@ -2638,6 +2677,10 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
         p.faturaUrl = faturaUrlFromPath(upd.fatura_path);
       }
     });
+    if(paraRemover.length > 0){
+      const idsRemovidos = new Set(paraRemover.map(p => p.id));
+      parcelas = parcelas.filter(p => !idsRemovidos.has(p.id));
+    }
 
     btn.disabled = false;
     closeFaturaCartaoModal();
@@ -2645,7 +2688,10 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
     const partes = [];
     if(paraInserir.length) partes.push(paraInserir.length + ' nova(s)');
     if(paraAtualizar.length) partes.push(paraAtualizar.length + ' atualizada(s)');
-    alert('Fatura processada: ' + partes.join(' e ') + '.');
+    if(paraRemover.length) partes.push(paraRemover.length + ' removida(s) por já terem terminado');
+    alert(partes.length
+      ? 'Fatura processada: ' + partes.join(', ') + '.'
+      : 'Fatura guardada no histórico. Nenhuma compra parcelada encontrada nela.');
   } catch(e){
     status.style.color = 'var(--danger)';
     status.textContent = 'Erro inesperado: ' + e.message;
@@ -2660,9 +2706,7 @@ document.getElementById('parcelaTableBody').addEventListener('click', async (e)=
       const p = parcelas.find(x=>x.id===delId);
       parcelas = parcelas.filter(x=>x.id!==delId);
       renderParcelas();
-      if(p && p.faturaPath){
-        await db.storage.from('faturas').remove([p.faturaPath]);
-      }
+      if(p) await removerArquivoFaturaSeLivre(p.faturaPath);
       const {error} = await db.from('parcelas').delete().eq('id', delId);
       if(error) avisarErro('Não foi possível excluir a parcela no servidor.', error);
     }
@@ -2713,7 +2757,7 @@ document.getElementById('btnExcluirParcelasSelecionadas').onclick = async ()=>{
   renderParcelas();
 
   for(const p of removidas){
-    if(p.faturaPath) await db.storage.from('faturas').remove([p.faturaPath]);
+    await removerArquivoFaturaSeLivre(p.faturaPath);
     const {error} = await db.from('parcelas').delete().eq('id', p.id);
     if(error) avisarErro(`Não foi possível excluir "${p.descricao}" no servidor.`, error);
   }
