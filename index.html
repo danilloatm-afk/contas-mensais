@@ -401,6 +401,7 @@
       <div class="renda-projecao-bulk">
         <input type="text" inputmode="decimal" id="rendaBulkInput" placeholder="R$ 0,00">
         <button class="secondary" id="btnRendaBulkAplicar">Aplicar a todos os meses</button>
+        <button class="secondary" id="btnRendaBulkAplicarVazios">Aplicar só aos meses sem renda</button>
       </div>
       <div class="renda-projecao-row" id="rendaProjecaoInputs"></div>
       <div id="projecaoSaldoChart"></div>
@@ -1444,6 +1445,26 @@ document.getElementById('btnRendaBulkAplicar').onclick = async ()=>{
   renderProjecaoSaldo();
   const {error} = await db.from('config').upsert({chave:'saldo_por_mes', valor: saldoPorMes, user_id: currentUserId});
   if(error) avisarErro('Não foi possível salvar a renda informada.', error);
+};
+
+document.getElementById('btnRendaBulkAplicarVazios').onclick = async ()=>{
+  const input = document.getElementById('rendaBulkInput');
+  const val = parseCurrency(input.value);
+  if(!val){
+    alert('Digite o valor da renda no campo ao lado (maior que zero) e clique de novo.');
+    return;
+  }
+  const vazios = mesesProjecao().filter(m => !saldoPorMes[m]);
+  if(vazios.length === 0){
+    alert('Todos os meses da projeção já têm renda informada.');
+    return;
+  }
+  vazios.forEach(m => { saldoPorMes[m] = val; });
+  input.value = '';
+  renderProjecaoSaldo();
+  const {error} = await db.from('config').upsert({chave:'saldo_por_mes', valor: saldoPorMes, user_id: currentUserId});
+  if(error){ avisarErro('Não foi possível salvar a renda informada.', error); return; }
+  alert(vazios.length + ' meses sem renda foram preenchidos com ' + fmtMoney(val) + '. Os que já tinham valor não foram alterados.');
 };
 
 function renderRendaProjecaoInputs(meses){
