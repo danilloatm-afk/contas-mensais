@@ -2730,13 +2730,34 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
       : 'Fatura guardada no histórico. Nenhuma compra parcelada encontrada nela.';
 
     // Resumo pra conferir com o PDF: quanto a IA leu de parcelas e (se ela achou) o total da fatura.
-    if(itensFatura.length > 0){
+    if(itensFatura.length > 0 || (Array.isArray(data.linhas_lidas) && data.linhas_lidas.length > 0)){
       const somaLida = itensFatura.reduce((s,p) => s + p.valor_parcela, 0);
-      msg += '\n\nLidas ' + itensFatura.length + ' compras parceladas, somando ' + fmtMoney(somaLida);
-      if(typeof data.total_fatura === 'number' && data.total_fatura > 0){
-        msg += ' (total da fatura: ' + fmtMoney(data.total_fatura) + ' — a diferença são compras à vista, juros/taxas ou itens que a IA deixou de ler)';
+      msg += '\n\nLidas ' + itensFatura.length + ' compras parceladas, somando ' + fmtMoney(somaLida) + '.';
+
+      // Confere com o total do PDF: parceladas + demais lançamentos (à vista, assinaturas, seguros, internacionais).
+      // O valor vem em texto na última coluna da linha ("440,50" ou "12.92") e pagamentos anteriores não contam.
+      const linhasLidas = Array.isArray(data.linhas_lidas) ? data.linhas_lidas : [];
+      const valorDaLinha = (s) => {
+        const txt = String(s).split('|').pop().trim();
+        return parseFloat(txt.includes(',') ? txt.replace(/\./g,'').replace(',','.') : txt);
+      };
+      const ehParceladaLinha = (s) => /(\b\d{1,2}\/\d{1,2}\b|parcela\s+\d+\s+de\s+\d+)/i.test(String(s).split('|').slice(1,-1).join('|'));
+      const ehPagamentoLinha = (s) => /pagamento/i.test(String(s).split('|').slice(1,-1).join('|'));
+      const outras = linhasLidas.filter(s => !ehParceladaLinha(s) && !ehPagamentoLinha(s) && valorDaLinha(s) > 0);
+      const somaOutras = outras.reduce((t,s) => t + valorDaLinha(s), 0);
+      if(linhasLidas.length > 0){
+        msg += '\nOutros lançamentos (à vista, assinaturas, seguros): ' + outras.length + ', somando ' + fmtMoney(somaOutras) + '.';
       }
-      msg += '.';
+      if(typeof data.total_fatura === 'number' && data.total_fatura > 0){
+        const dif = data.total_fatura - somaLida - (linhasLidas.length > 0 ? somaOutras : 0);
+        if(linhasLidas.length > 0 && Math.abs(dif) < 0.05){
+          msg += '\nTotal da fatura: ' + fmtMoney(data.total_fatura) + ' — confere com o que foi lido ✓';
+        } else if(linhasLidas.length > 0){
+          msg += '\nTotal da fatura: ' + fmtMoney(data.total_fatura) + ' — diferença de ' + fmtMoney(Math.abs(dif)) + ' (IOF/encargos sem linha própria, ou algo que a IA não leu).';
+        } else {
+          msg += '\nTotal da fatura: ' + fmtMoney(data.total_fatura) + ' (a diferença são compras à vista, juros/taxas ou itens que a IA deixou de ler).';
+        }
+      }
     }
     if(naoEncontradas.length > 0){
       msg += '\n\n⚠ Estas parcelas deveriam estar nesta fatura mas a IA não leu (continuam na lista — confira o PDF):\n' +
@@ -2833,6 +2854,13 @@ document.getElementById('faturasHistoricoTableBody').addEventListener('click', a
 initAuth();
 
 if('serviceWorker' in navigator){
+  // Quando uma versão nova do app assume o controle (depois de um deploy), recarrega uma vez pra
+  // não ficar rodando o código antigo. Na primeira instalação (sem controlador anterior) não recarrega.
+  const tinhaServiceWorker = !!navigator.serviceWorker.controller;
+  let jaRecarregou = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if(tinhaServiceWorker && !jaRecarregou){ jaRecarregou = true; location.reload(); }
+  });
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(e => console.error('Falha ao registrar service worker:', e));
   });
