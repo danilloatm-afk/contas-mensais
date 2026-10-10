@@ -381,7 +381,7 @@
     </div>
 
     <div class="chart-box" style="margin-bottom:24px;">
-      <h3>Comprometimento mensal projetado (próximos 24 meses)</h3>
+      <h3>Comprometimento mensal projetado (próximos 5 anos)</h3>
       <div class="sub" style="margin-bottom:8px;">Escolha o que entra na conta:</div>
       <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; font-size:13px;">
         <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
@@ -462,7 +462,7 @@
         <div class="value" id="cardSaldoInvestido">R$ 0,00</div>
       </div>
       <div class="card">
-        <div class="label">Projetado em 24 meses (líquido)</div>
+        <div class="label">Projetado em 5 anos (líquido)</div>
         <div class="value" id="cardInvestido12m">R$ 0,00</div>
       </div>
     </div>
@@ -512,7 +512,8 @@
     </div>
 
     <div class="chart-box" style="margin-bottom:24px;">
-      <h3>Projeção de saldo investido (24 meses)</h3>
+      <h3>Projeção de saldo investido (5 anos)</h3>
+      <div class="sub" style="margin-bottom:8px;">Assume a Selic atual constante e um aporte por mês conforme a sobra projetada (renda − contas − parcelas − gasto diário). Meses sem renda informada não geram aporte.</div>
       <div id="investimentoChart"></div>
     </div>
 
@@ -1360,7 +1361,7 @@ function renderProjecaoParcelas(){
   const box = document.getElementById('projecaoChart');
   const hoje = new Date(); hoje.setDate(1);
   const meses = [];
-  for(let i=0;i<24;i++){
+  for(let i=0;i<60;i++){
     meses.push(new Date(hoje.getFullYear(), hoje.getMonth()+i, 1));
   }
   const incluirParcelas = document.getElementById('filtroCompParcelas').checked;
@@ -1427,7 +1428,7 @@ function totalContasRecorrentes(monthStr){
 function mesesProjecao(){
   const mesBase = ym(new Date()); // mês atual, incluído na projeção
   const meses = [];
-  for(let i=0;i<24;i++) meses.push(addMonths(mesBase, i));
+  for(let i=0;i<60;i++) meses.push(addMonths(mesBase, i));
   return meses;
 }
 
