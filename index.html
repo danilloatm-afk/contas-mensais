@@ -2617,11 +2617,28 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
     // Compra já rastreada (mesmo cartão + descrição + mês de início) vira atualização, não duplicata.
     const paraInserir = [];
     const paraAtualizar = [];
+    // Duas compras diferentes podem ter o mesmo nome e a mesma parcela (ex: dois iPhones 13/21 com valores
+    // distintos) — cada parcela existente só casa com UM item da fatura, preferindo o de mesmo valor.
+    const usados = new Set();
+    const casamento = new Map(); // item da fatura -> parcela existente
+    const candidatosDe = (p) => {
+      const mesPrimeira = addMonths(mesFatura, -(p.parcela_atual - 1));
+      return parcelas.filter(x =>
+        x.cartao === cartao && x.descricao === p.descricao && x.mesPrimeiraParcela === mesPrimeira && !usados.has(x.id)
+      );
+    };
+    itensFatura.forEach(p => {
+      const igual = candidatosDe(p).find(x => Math.abs(x.valorParcela - p.valor_parcela) < 0.005);
+      if(igual){ usados.add(igual.id); casamento.set(p, igual); }
+    });
+    itensFatura.forEach(p => {
+      if(casamento.has(p)) return;
+      const qualquer = candidatosDe(p)[0];
+      if(qualquer){ usados.add(qualquer.id); casamento.set(p, qualquer); }
+    });
     itensFatura.forEach(p => {
       const mesPrimeiraParcela = addMonths(mesFatura, -(p.parcela_atual - 1));
-      const existente = parcelas.find(x =>
-        x.cartao === cartao && x.descricao === p.descricao && x.mesPrimeiraParcela === mesPrimeiraParcela
-      );
+      const existente = casamento.get(p);
       if(existente){
         paraAtualizar.push({
           id: existente.id,
@@ -2639,23 +2656,27 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
       }
     });
 
-    // A fatura mais recente do cartão é a "foto" do que está ativo: parcela com fim que não aparece
-    // mais nela já terminou (ou foi cancelada) e sai da lista. Despesas fixas (sem fim) nunca são
-    // mexidas. Reenvio de um mês antigo (retroativo) não remove nada.
+    // A fatura mais recente do cartão é a "foto" do que está ativo. Parcela com fim que já tinha TERMINADO
+    // antes do mês da fatura sai da lista (com confirmação). Já a que deveria estar nesta fatura mas não foi
+    // lida NÃO é removida (pode ser leitura incompleta da IA): só vira aviso. Despesas fixas (sem fim) nunca
+    // são mexidas. Reenvio de um mês antigo (retroativo) não remove nem avisa nada.
     let paraRemover = [];
+    let naoEncontradas = [];
     const ehFaturaMaisRecente = !faturasHistorico.some(f => f.cartao === cartao && f.mes > mesFatura);
     if(ehFaturaMaisRecente){
       const idsNaFatura = new Set(paraAtualizar.map(u => u.id));
-      paraRemover = parcelas.filter(p =>
+      const naoCasadas = parcelas.filter(p =>
         p.cartao === cartao && p.parcelasTotais != null &&
         !idsNaFatura.has(p.id) && p.mesPrimeiraParcela <= mesFatura
       );
+      paraRemover = naoCasadas.filter(p => parcelaMesFim(p) < mesFatura);
+      naoEncontradas = naoCasadas.filter(p => parcelaMesFim(p) >= mesFatura);
     }
     if(paraRemover.length > 0){
       const [fy, fm] = mesFatura.split('-');
       const lista = paraRemover.map(p => '• ' + p.descricao + ' (' + fmtMoney(p.valorParcela) + '/mês)').join('\n');
       const ok = confirm('Estas parcelas do cartão ' + cartao + ' não aparecem na fatura de ' + fm + '/' + fy +
-        ' (já terminaram de ser pagas ou foram canceladas) e serão removidas da lista:\n\n' + lista +
+        ' (já terminaram de ser pagas) e serão removidas da lista:\n\n' + lista +
         '\n\nA fatura antiga continua guardada no histórico. Remover da lista?');
       if(!ok) paraRemover = [];
     }
@@ -2704,9 +2725,24 @@ document.getElementById('btnFcEnviar').onclick = async ()=>{
     if(paraInserir.length) partes.push(paraInserir.length + ' nova(s)');
     if(paraAtualizar.length) partes.push(paraAtualizar.length + ' atualizada(s)');
     if(paraRemover.length) partes.push(paraRemover.length + ' removida(s) por já terem terminado');
-    alert(partes.length
+    let msg = partes.length
       ? 'Fatura processada: ' + partes.join(', ') + '.'
-      : 'Fatura guardada no histórico. Nenhuma compra parcelada encontrada nela.');
+      : 'Fatura guardada no histórico. Nenhuma compra parcelada encontrada nela.';
+
+    // Resumo pra conferir com o PDF: quanto a IA leu de parcelas e (se ela achou) o total da fatura.
+    if(itensFatura.length > 0){
+      const somaLida = itensFatura.reduce((s,p) => s + p.valor_parcela, 0);
+      msg += '\n\nLidas ' + itensFatura.length + ' compras parceladas, somando ' + fmtMoney(somaLida);
+      if(typeof data.total_fatura === 'number' && data.total_fatura > 0){
+        msg += ' (total da fatura: ' + fmtMoney(data.total_fatura) + ' — a diferença são compras à vista, juros/taxas ou itens que a IA deixou de ler)';
+      }
+      msg += '.';
+    }
+    if(naoEncontradas.length > 0){
+      msg += '\n\n⚠ Estas parcelas deveriam estar nesta fatura mas a IA não leu (continuam na lista — confira o PDF):\n' +
+        naoEncontradas.map(p => '• ' + p.descricao + ' (' + fmtMoney(p.valorParcela) + ')').join('\n');
+    }
+    alert(msg);
   } catch(e){
     status.style.color = 'var(--danger)';
     status.textContent = 'Erro inesperado: ' + e.message;
