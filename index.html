@@ -433,7 +433,7 @@
     <div class="sub" style="margin-bottom:12px;">Contas marcadas como recorrente na aba Contas — só consulta aqui; para editar ou excluir, use a aba Contas.</div>
     <table>
       <thead>
-        <tr><th>Descrição</th><th>Categoria</th><th>Valor/mês</th><th>Dia</th></tr>
+        <tr><th>Descrição</th><th>Categoria</th><th>Valor/mês</th><th>Dia</th><th>Termina em</th></tr>
       </thead>
       <tbody id="contasRecorrentesTableBody"></tbody>
     </table>
@@ -574,6 +574,11 @@
     <div class="field checkbox">
       <input type="checkbox" id="fRecorrente">
       <label for="fRecorrente">Conta recorrente (repete todo mês)</label>
+    </div>
+    <div class="field" id="fFimWrap" style="display:none;">
+      <label>Última parcela / vigência até (opcional)</label>
+      <input type="date" id="fFim">
+      <div class="sub" style="margin-top:4px;">A conta deixa de aparecer nos meses depois dessa data. Em branco = sem fim.</div>
     </div>
     <div class="modal-actions">
       <button class="secondary" id="btnCancel">Cancelar</button>
@@ -800,22 +805,33 @@ function faturaUrlFromPath(path){
   if(!path) return null;
   return db.storage.from('faturas').getPublicUrl(path).data.publicUrl;
 }
+// A coluna "fim" (data final da conta recorrente) é opcional no banco: só é enviada quando a conta tem
+// data final, ou quando o banco já tem a coluna (pra poder limpar). Assim nada quebra antes da migração.
+let colunaFimExiste = false;
 function rowToConta(r){
+  if('fim' in r) colunaFimExiste = true;
   return {
     id:r.id, descricao:r.descricao, categoria:r.categoria, valor:Number(r.valor),
     dia:r.dia, recorrente:r.recorrente, inicio:r.inicio, unicoMes:r.unico_mes,
+    fim: r.fim || null, // 'YYYY-MM-DD' (última parcela/vigência) ou null = sem fim
     pagamentos:r.pagamentos || {},
     faturaPath: r.fatura_path || null,
     faturaUrl: faturaUrlFromPath(r.fatura_path)
   };
 }
 function contaToRow(c){
-  return {
+  const row = {
     id:c.id, descricao:c.descricao, categoria:c.categoria, valor:c.valor,
     dia:c.dia, recorrente:c.recorrente, inicio:c.inicio, unico_mes:c.unicoMes,
     pagamentos:c.pagamentos || {}, fatura_path: c.faturaPath || null,
     user_id: currentUserId
   };
+  if(c.fim || colunaFimExiste) row.fim = c.fim || null;
+  return row;
+}
+// Conta recorrente aparece do mês de início até o mês da data final (inclusive), se houver.
+function contaRecorrenteAtiva(c, monthStr){
+  return c.recorrente && c.inicio <= monthStr && (!c.fim || c.fim.slice(0,7) >= monthStr);
 }
 function rowToGasto(r){
   return {
@@ -985,7 +1001,7 @@ function uid(){ return Date.now().toString(36) + Math.random().toString(36).slic
 
 function contasDoMes(monthStr){
   return contas.filter(c => {
-    if(c.recorrente) return c.inicio <= monthStr;
+    if(c.recorrente) return contaRecorrenteAtiva(c, monthStr);
     return c.unicoMes === monthStr;
   });
 }
@@ -1056,7 +1072,7 @@ function renderTable(lista, monthStr){
     const st = statusDaConta(c, monthStr);
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${escapeHtml(c.descricao)}${c.recorrente?'<span class="recorrente-tag">↻ recorrente</span>':''}</td>
+      <td>${escapeHtml(c.descricao)}${c.recorrente?'<span class="recorrente-tag">↻ recorrente' + (c.fim ? ' até ' + c.fim.slice(5,7) + '/' + c.fim.slice(0,4) : '') + '</span>':''}</td>
       <td><span class="cat-badge"><span class="swatch" style="width:8px;height:8px;background:${getCatColor(c.categoria)}"></span> ${escapeHtml(c.categoria)}</span></td>
       <td>Dia ${c.dia}</td>
       <td>${fmtMoney(c.valor)}</td>
@@ -1352,6 +1368,7 @@ function renderContasRecorrentesTable(){
         <td><span class="cat-badge"><span class="swatch" style="width:8px;height:8px;background:${getCatColor(c.categoria)}"></span> ${escapeHtml(c.categoria)}</span></td>
         <td>${fmtMoney(c.valor)}</td>
         <td>Dia ${c.dia}</td>
+        <td>${c.fim ? (c.fim.slice(0,7) < ym(new Date()) ? 'Encerrada em ' : '') + c.fim.slice(5,7) + '/' + c.fim.slice(0,4) : '—'}</td>
       `;
       tbody.appendChild(tr);
     });
@@ -1423,7 +1440,7 @@ function avisarPossivelDuplicataRecorrente(descricao, origem){
 }
 
 function totalContasRecorrentes(monthStr){
-  return contas.filter(c => c.recorrente && c.inicio <= monthStr).reduce((s,c)=>s+c.valor, 0);
+  return contas.filter(c => contaRecorrenteAtiva(c, monthStr)).reduce((s,c)=>s+c.valor, 0);
 }
 
 function mesesProjecao(){
@@ -2015,8 +2032,14 @@ function openModal(conta){
   document.getElementById('fValor').value = conta ? conta.valor : '';
   document.getElementById('fDia').value = conta ? conta.dia : '';
   document.getElementById('fRecorrente').checked = conta ? conta.recorrente : false;
+  document.getElementById('fFim').value = conta && conta.fim ? conta.fim : '';
+  atualizarCampoFim();
   overlay.classList.add('open');
 }
+function atualizarCampoFim(){
+  document.getElementById('fFimWrap').style.display = document.getElementById('fRecorrente').checked ? '' : 'none';
+}
+document.getElementById('fRecorrente').addEventListener('change', atualizarCampoFim);
 function closeModal(){ overlay.classList.remove('open'); }
 
 document.getElementById('btnAdd').onclick = ()=>openModal(null);
@@ -2037,24 +2060,39 @@ document.getElementById('btnSave').onclick = async ()=>{
     return;
   }
 
+  const fim = recorrente ? (document.getElementById('fFim').value || null) : null;
+  const inicioDaConta = id ? contas.find(x=>x.id===id).inicio : monthStr;
+  if(fim && fim.slice(0,7) < inicioDaConta){
+    alert('A data final não pode ser anterior ao mês em que a conta começa (' + inicioDaConta.split('-').reverse().join('/') + ').');
+    return;
+  }
+
   let contaObj;
   let eraRecorrente = false;
   if(id){
     contaObj = contas.find(x=>x.id===id);
     eraRecorrente = contaObj.recorrente;
     contaObj.descricao = descricao; contaObj.categoria = categoria; contaObj.valor = valor;
-    contaObj.dia = dia; contaObj.recorrente = recorrente;
+    contaObj.dia = dia; contaObj.recorrente = recorrente; contaObj.fim = fim;
   } else {
     contaObj = {
       id: uid(), descricao, categoria, valor, dia, recorrente,
-      inicio: monthStr, unicoMes: monthStr, pagamentos: {}
+      inicio: monthStr, unicoMes: monthStr, fim, pagamentos: {}
     };
     contas.push(contaObj);
   }
   if(recorrente && !eraRecorrente) avisarPossivelDuplicataRecorrente(descricao, 'contaRecorrente');
   closeModal(); render();
   const {error} = await db.from('contas').upsert(contaToRow(contaObj));
-  if(error) avisarErro('Não foi possível salvar a conta no servidor.', error);
+  if(error){
+    if(fim && /fim/i.test(error.message || '')){
+      // O banco ainda não tem a coluna "fim": desfaz na tela o que não foi salvo.
+      alert('Esta conta NÃO foi salva: para usar a data final é preciso criar a coluna no Supabase (rodar o arquivo supabase-contas-fim.sql no SQL Editor). Depois é só salvar de novo.');
+      await carregarDados();
+    } else {
+      avisarErro('Não foi possível salvar a conta no servidor.', error);
+    }
+  }
 };
 
 // Tabs
