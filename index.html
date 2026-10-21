@@ -1684,7 +1684,11 @@ function renderInvestimentos(){
     const aporteSugerido = Math.max(0, sobra * (investimentoPercentual/100));
     const mesNumero = parseInt(m.split('-')[1], 10);
     const aporteExtra = (aporteExtraMes && mesNumero === aporteExtraMes) ? aporteExtraValor : 0;
-    const aporte = aporteSugerido + aporteExtra;
+    // Se o aporte deste mês já foi confirmado, ele já está dentro do "saldo investido" (o botão
+    // Confirmar soma no saldo). Então a linha mostra o valor realmente investido e NÃO entra de
+    // novo como aporte novo na projeção (senão contaria em dobro).
+    const aporteJaConfirmado = i === 0 && aporteConfirmadoMes === m;
+    const aporte = aporteJaConfirmado ? aporteConfirmadoValor : aporteSugerido + aporteExtra;
 
     // No mês atual usa só a taxa dos dias restantes (o resto do mês já rendeu antes de hoje,
     // e isso já deveria estar refletido no "saldo investido hoje"); nos meses seguintes, mês cheio.
@@ -1704,7 +1708,7 @@ function renderInvestimentos(){
     });
 
     // O aporte deste mês entra agora; começa a render a partir do mês seguinte.
-    if(aporte > 0) cohorts.push({principal: aporte, valor: aporte, idadeMeses: 0});
+    if(aporte > 0 && !aporteJaConfirmado) cohorts.push({principal: aporte, valor: aporte, idadeMeses: 0});
 
     const rendimento = rendimentoBase + rendimentoNovo;
     const rendimentoLiquido = rendimentoBase * (1 - 0.15) + rendimentoNovoLiquido;
@@ -1719,12 +1723,12 @@ function renderInvestimentos(){
     }, 0);
     const saldo = saldoLiquidoBase + saldoLiquidoCohorts;
 
-    return { mes: m, sobra, aporte, rendimento, rendimentoLiquido, saldo };
+    return { mes: m, sobra, aporte, aporteSugerido: aporteSugerido + aporteExtra, aporteJaConfirmado, rendimento, rendimentoLiquido, saldo };
   });
 
   document.getElementById('cardInvestido12m').textContent = fmtMoney(linhas[linhas.length-1].saldo);
 
-  aporteMesAtualSugerido = linhas[0].aporte;
+  aporteMesAtualSugerido = linhas[0].aporteSugerido;
   const btnConfirmarAporte = document.getElementById('btnConfirmarAporte');
   const inputAporteMes = document.getElementById('invAporteMesInput');
   const jaConfirmadoEsteMes = aporteConfirmadoMes === mesesProjecao()[0];
@@ -1753,7 +1757,7 @@ function renderInvestimentos(){
     const barH = (l.saldo/maxVal) * 120;
     const x = i*(barW+gap) + 10;
     const y0 = 140 - barH;
-    bars += `<rect x="${x}" y="${y0}" width="${barW}" height="${Math.max(barH,1)}" rx="4" fill="#22c55e" class="inv-bar" data-mes="${monthLabel(d)}" data-valor="${l.saldo}" data-rendimento="${l.rendimento}" data-rendimentoliquido="${l.rendimentoLiquido}" data-aporte="${l.aporte}"></rect>`;
+    bars += `<rect x="${x}" y="${y0}" width="${barW}" height="${Math.max(barH,1)}" rx="4" fill="#22c55e" class="inv-bar" data-mes="${monthLabel(d)}" data-valor="${l.saldo}" data-rendimento="${l.rendimento}" data-rendimentoliquido="${l.rendimentoLiquido}" data-aporte="${l.aporte}" data-confirmado="${l.aporteJaConfirmado ? 1 : 0}"></rect>`;
     bars += `<text x="${x+barW/2}" y="155" font-size="9" fill="#94a3b8" text-anchor="middle">${d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}/${String(d.getFullYear()).slice(-2)}</text>`;
   });
   const chartW = linhas.length*(barW+gap)+10;
@@ -1764,7 +1768,8 @@ function renderInvestimentos(){
       const valor = parseFloat(el.getAttribute('data-valor'));
       const rendimentoLiquido = parseFloat(el.getAttribute('data-rendimentoliquido'));
       const aporte = parseFloat(el.getAttribute('data-aporte'));
-      showTooltip(e, `<strong>${escapeHtml(mes)}</strong><br>Saldo líquido (se resgatasse agora): ${fmtMoney(valor)}<br>Rendimento líquido do mês (já com IR): ${fmtMoney(rendimentoLiquido)}<br>Aporte sugerido: ${fmtMoney(aporte)}`);
+      const rotuloAporte = el.getAttribute('data-confirmado') === '1' ? 'Aporte confirmado' : 'Aporte sugerido';
+      showTooltip(e, `<strong>${escapeHtml(mes)}</strong><br>Saldo líquido (se resgatasse agora): ${fmtMoney(valor)}<br>Rendimento líquido do mês (já com IR): ${fmtMoney(rendimentoLiquido)}<br>${rotuloAporte}: ${fmtMoney(aporte)}`);
     });
     el.addEventListener('mouseleave', hideTooltip);
   });
@@ -1778,7 +1783,7 @@ function renderInvestimentos(){
     return `<tr>
       <td>${escapeHtml(label)}</td>
       <td>${fmtMoney(l.sobra)}</td>
-      <td>${fmtMoney(l.aporte)}</td>
+      <td>${fmtMoney(l.aporte)}${l.aporteJaConfirmado ? ' ✓' : ''}</td>
       <td>${fmtMoney(l.saldo)}</td>
       <td>${fmtMoney(l.rendimentoLiquido)}</td>
     </tr>`;
